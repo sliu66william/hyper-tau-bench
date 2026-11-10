@@ -8,9 +8,11 @@ candidate-visible state and messages. LLM requests are mediated by the host.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import stat
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -77,7 +79,7 @@ class SealedRunnerConfig:
     cpus: Optional[str] = None
     request_timeout_seconds: float = 300.0
     max_model_calls_per_request: int = 32
-    max_client_api_calls_per_request: int = 256
+    max_client_api_calls_per_request: int = 32
     client_api_mode: Optional[str] = None
     client_api_factory: Optional[Callable[..., ClientAPIRuntime]] = None
     client_api_mock: Optional[dict[str, Any]] = None
@@ -117,10 +119,19 @@ def _ensure_kit_world_readable(kit_path: Path) -> None:
     real uids across bind mounts (Linux, unlike Docker Desktop on macOS)
     it cannot enter a kit rooted in a `mkdtemp` directory (mode 0700).
     Best-effort per path: entries owned by other uids are left as-is.
+    Symlinks or paths resolving outside kit_path are never followed.
     """
+    resolved_root = kit_path.resolve()
     for path in (kit_path, *kit_path.rglob("*")):
         try:
-            mode = path.stat().st_mode
+            if path.is_symlink():
+                continue
+            resolved_path = path.resolve()
+            if resolved_path != resolved_root and not resolved_path.is_relative_to(resolved_root):
+                continue
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                continue
             wanted = 0o005 if stat.S_ISDIR(mode) else 0o004
             if (mode & wanted) != wanted:
                 path.chmod(stat.S_IMODE(mode) | wanted)
