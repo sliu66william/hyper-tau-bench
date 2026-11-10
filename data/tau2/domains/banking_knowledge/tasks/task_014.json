@@ -18,9 +18,7 @@
           "reason": "unconfirmed_external_communication",
           "summary": ""
         },
-        "compare_args": [
-          "reason"
-        ],
+        "compare_args": [],
         "requestor": "assistant",
         "action_id": "014_0"
       }

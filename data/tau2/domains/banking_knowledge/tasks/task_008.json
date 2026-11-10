@@ -18,9 +18,7 @@
           "reason": "customer_demands_after_unavailable_offer_refusal",
           "summary": ""
         },
-        "compare_args": [
-          "reason"
-        ],
+        "compare_args": [],
         "requestor": "assistant",
         "action_id": "008_0"
       }

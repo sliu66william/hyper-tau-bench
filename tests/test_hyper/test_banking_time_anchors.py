@@ -179,7 +179,7 @@ def test_every_corpus_checker_pins_the_frozen_date() -> None:
 def test_training_records_carry_no_future_events() -> None:
     offenders = []
     for record in sorted(SECTIONS_ROOT.glob("*/training_records/case_*.md")):
-        rel = str(record.relative_to(SECTIONS_ROOT))
+        rel = record.relative_to(SECTIONS_ROOT).as_posix()
         allowed = TRAINING_RECORD_FUTURE_DATES.get(rel, set())
         for found in sorted(_dates_in(record.read_text())):
             if found > FROZEN_DATE and found.isoformat() not in allowed:

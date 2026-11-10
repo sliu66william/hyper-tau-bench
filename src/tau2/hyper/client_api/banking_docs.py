@@ -422,3 +422,114 @@ def rewrite_banking_client_api_file(path: Path) -> tuple[ClientOperation, ...]:
     if rewritten.content != original:
         path.write_bytes(rewritten.content)
     return rewritten.operations
+
+
+_BINARY_ARTIFACT_REPRESENTATIONS = frozenset(
+    {
+        "process_flowchart",
+        "reference_document",
+        "website_screenshot",
+        "slide_deck",
+        "spreadsheet_workbook",
+    }
+)
+
+
+def append_binary_artifact_banking_contracts(
+    sop_variant_manifest: dict[str, Any] | None,
+    sop_path: Path,
+) -> tuple[ClientOperation, ...]:
+    """Append REST API contracts for operations referenced inside binary PDF/PNG/XLSX
+    artifacts (flowcharts, reference PDFs, screenshots) that cannot be rewritten in place.
+
+    Only operations from non-client-held facts owned by delivered binary artifacts
+    are included, preserving the Client knowledge boundary while ensuring that
+    legacy diagram/print identifiers (e.g. open_bank_account_4821,
+    activate_debit_card_8291/8292/8293, apply_checking_account_credit_5829) map
+    to their concrete REST contracts.
+    """
+    if not sop_variant_manifest or not sop_path.is_file():
+        return ()
+    from tau2.hyper.transformations.compile import compile_variant_transformations
+
+    compilation = compile_variant_transformations(sop_variant_manifest)
+    held_by_section = {
+        sec_id: set(fids)
+        for sec_id, fids in compilation.client_held_fact_ids.items()
+    }
+    op_index = _operation_index()
+    binary_ops: list[ClientOperation] = []
+    legacy_aliases: dict[str, list[str]] = {}
+
+    for fact_cov in compilation.facts:
+        if fact_cov.fact_id in held_by_section.get(fact_cov.section_id, set()):
+            continue
+        if not any(rep in _BINARY_ARTIFACT_REPRESENTATIONS for rep in fact_cov.representations):
+            continue
+        stmt = fact_cov.statement or ""
+        for legacy_name, op in sorted(op_index.items(), key=lambda item: len(item[0]), reverse=True):
+            if legacy_name in stmt:
+                if op not in binary_ops:
+                    binary_ops.append(op)
+                aliases = legacy_aliases.setdefault(op.operation_id, [])
+                if legacy_name not in aliases:
+                    aliases.append(legacy_name)
+
+    held_tool_names: set[str] = set()
+    for fact_cov in compilation.facts:
+        if fact_cov.fact_id in held_by_section.get(fact_cov.section_id, set()):
+            for legacy_name in op_index:
+                if legacy_name in (fact_cov.statement or ""):
+                    held_tool_names.add(legacy_name)
+
+    for activation in compilation.activations:
+        if activation.representation not in _BINARY_ARTIFACT_REPRESENTATIONS:
+            continue
+        for artifact in activation.artifacts:
+            src_path = artifact.source_path
+            candidate_texts: list[str] = []
+            # Check sibling sources/text/print directories for the binary PDF/PNG's text source
+            for sibling_sub in ("sources", "text", "print"):
+                sibling_dir = src_path.parent.parent / sibling_sub
+                if sibling_dir.is_dir():
+                    for ext in (".html", ".txt", ".md"):
+                        cand = sibling_dir / (src_path.stem + ext)
+                        if cand.is_file():
+                            candidate_texts.append(cand.read_text(encoding="utf-8", errors="replace"))
+            blob = "\n".join(candidate_texts)
+            if not blob:
+                continue
+            for legacy_name, op in sorted(op_index.items(), key=lambda item: len(item[0]), reverse=True):
+                if legacy_name in held_tool_names:
+                    continue
+                if legacy_name in blob:
+                    if op not in binary_ops:
+                        binary_ops.append(op)
+                    aliases = legacy_aliases.setdefault(op.operation_id, [])
+                    if legacy_name not in aliases:
+                        aliases.append(legacy_name)
+
+    if not binary_ops:
+        return ()
+
+    existing_text = sop_path.read_text(encoding="utf-8", errors="replace")
+    new_contracts: list[str] = []
+    for op in binary_ops:
+        contract_block = _operation_contract(op)
+        aliases = legacy_aliases.get(op.operation_id, [])
+        if aliases:
+            alias_line = "Diagram / print identifier(s): " + ", ".join(f"`{a}`" for a in aliases) + "."
+            contract_block = contract_block + "\n\n" + alias_line
+        if f"`{op.method} {op.path}`" not in existing_text:
+            new_contracts.append(contract_block)
+
+    if new_contracts:
+        updated = (
+            existing_text.rstrip()
+            + "\n\n---\n\n## Referenced API contracts (diagram & print materials)\n\n"
+            + "\n\n---\n\n".join(new_contracts)
+            + "\n"
+        )
+        sop_path.write_text(updated, encoding="utf-8")
+    return tuple(binary_ops)
+

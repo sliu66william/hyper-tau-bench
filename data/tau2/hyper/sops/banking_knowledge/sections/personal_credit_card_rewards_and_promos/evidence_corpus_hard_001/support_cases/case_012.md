@@ -9,7 +9,7 @@ QA status: approved
 ## Transcript
 [18:31] **Agent:** Rho Bank card support, this is Priti. How can I help you this evening?
 
-[18:32] **Customer:** Hi. Platinum cardholder. My November statement just cut and there's no annual-fee rebate on it. Last two months there was one. Did something change, or did I get dropped from it somehow?
+[18:32] **Customer:** Hi. Platinum cardholder. My November statement just cut and there's no $150.00 annual-fee rebate on it after my cardmember year closed. My August and September cycles were both over $7,500.00. Did something change, or did I miss a monthly threshold?
 
 [18:33] **Agent:** Nothing should have changed, so let's look at your actual numbers. Can you confirm the email on the account and your date of birth?
 
@@ -17,11 +17,11 @@ QA status: approved
 
 [18:35] **Support console:** Identity verified, two factors matched. RB-1180476, Platinum Rewards Card.
 
-[18:37] **Agent:** Thanks, Nate. Pulling your statement cycle now. Here's the picture: the rebate on your card works month by month, and per the Platinum guide it's a $150.00 rebate in months where your spend reaches $7,500.00. Your October cycle spend came to $7,214.55 — so you finished about $285 under the line, and that's the whole story. No status change, no drop; the month just came up short.
+[18:37] **Agent:** Thanks, Nate. Pulling your statement cycle now. Here's the picture: per the Platinum guide, you earn the $150.00 rebate on your annual fee by meeting a monthly spend threshold of $7,500.00 across each monthly window of the cardmember year (tracked here per statement cycle). Your October cycle spend came to $7,214.55 — so you finished about $285 under the $7,500.00 line, and that's why the annual-fee rebate didn't post for the year.
 
-[18:39] **Customer:** $7,214.55... wow, that is annoyingly close. So September and August I was over $7,500 and that's why those statements had the $150?
+[18:39] **Customer:** $7,214.55... wow, that is annoyingly close. So even though September and August were over $7,500, missing October cost me the $150 rebate for the year?
 
-[18:41] **Agent:** Exactly — both of those cycles cleared it, this one didn't, and each month stands on its own. Nothing carries over in either direction, so a near miss in October doesn't cost you anything for November. You start fresh.
+[18:41] **Agent:** Exactly — both of those cycles cleared $7,500.00, but October came up short. Every monthly window in the cardmember year has to meet the $7,500.00 threshold without carrying over excess spend from earlier months, so once your new cardmember year starts with this statement, your 12-month tracking resets for the new year.
 
 [18:42] **Customer:** Is there any grace amount? Like, within $300 counts? Asking with no shame.
 

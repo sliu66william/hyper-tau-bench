@@ -148,9 +148,7 @@
             "reason": "account_ownership_dispute",
             "summary": ""
           },
-          "compare_args": [
-            "reason"
-          ],
+          "compare_args": [],
           "requestor": "assistant",
           "action_id": "004_0"
         }
@@ -350,9 +348,7 @@
             "reason": "customer_demands_after_unavailable_offer_refusal",
             "summary": ""
           },
-          "compare_args": [
-            "reason"
-          ],
+          "compare_args": [],
           "requestor": "assistant",
           "action_id": "008_0"
         }
@@ -448,9 +444,7 @@
             "reason": "kb_search_unsuccessful_customer_requests_transfer",
             "summary": "Customer is asking about how to set up a travel notification for their Platinum Rewards Card before traveling to Japan. I was unable to find information about this process in the knowledge base."
           },
-          "compare_args": [
-            "reason"
-          ],
+          "compare_args": [],
           "requestor": "assistant",
           "action_id": "012_0"
         }
@@ -488,9 +482,7 @@
             "reason": "unconfirmed_external_communication",
             "summary": ""
           },
-          "compare_args": [
-            "reason"
-          ],
+          "compare_args": [],
           "requestor": "assistant",
           "action_id": "014_0"
         }

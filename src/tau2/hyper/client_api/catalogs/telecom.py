@@ -28,6 +28,13 @@ class Customer(APIModel):
     phone_number: str
     account_status: Literal["Active", "Suspended", "Pending Verification", "Closed"]
     line_ids: list[str]
+    date_of_birth: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[dict[str, Any]] = None
+    bill_ids: Optional[list[str]] = None
+    created_at: Optional[str] = None
+    goodwill_credit_used_this_year: Optional[float] = None
+    payment_methods: Optional[list[dict[str, Any]]] = None
 
 
 class Plan(APIModel):
@@ -44,6 +51,8 @@ class Device(APIModel):
     model: str
     is_esim_capable: bool
     activated: bool
+    imei: Optional[str] = None
+    activation_date: Optional[str] = None
 
 
 class Line(APIModel):
@@ -57,6 +66,7 @@ class Line(APIModel):
     roaming_enabled: bool
     contract_end_date: Optional[date] = None
     suspension_start_date: Optional[date] = None
+    last_plan_change_date: Optional[date] = None
 
 
 class BillLineItem(APIModel):
@@ -204,6 +214,23 @@ def _customer(value: Any) -> dict[str, Any]:
         "phone_number": customer["phone_number"],
         "account_status": customer["account_status"],
         "line_ids": customer["line_ids"],
+        "date_of_birth": (
+            str(customer["date_of_birth"])
+            if customer.get("date_of_birth") is not None
+            else None
+        ),
+        "email": customer.get("email"),
+        "address": customer.get("address"),
+        "bill_ids": customer.get("bill_ids"),
+        "created_at": (
+            str(customer["created_at"])
+            if customer.get("created_at") is not None
+            else None
+        ),
+        "goodwill_credit_used_this_year": customer.get(
+            "goodwill_credit_used_this_year"
+        ),
+        "payment_methods": customer.get("payment_methods"),
     }
 
 
@@ -222,6 +249,7 @@ def _line(value: Any) -> dict[str, Any]:
             "roaming_enabled",
             "contract_end_date",
             "suspension_start_date",
+            "last_plan_change_date",
         )
     }
 
@@ -229,14 +257,17 @@ def _line(value: Any) -> dict[str, Any]:
 def _device(value: Any) -> dict[str, Any]:
     device = _data(value)
     return {
-        field: device.get(field)
-        for field in (
-            "device_id",
-            "device_type",
-            "model",
-            "is_esim_capable",
-            "activated",
-        )
+        "device_id": device.get("device_id"),
+        "device_type": device.get("device_type"),
+        "model": device.get("model"),
+        "is_esim_capable": device.get("is_esim_capable"),
+        "activated": device.get("activated"),
+        "imei": device.get("imei"),
+        "activation_date": (
+            str(device["activation_date"])
+            if device.get("activation_date") is not None
+            else None
+        ),
     }
 
 

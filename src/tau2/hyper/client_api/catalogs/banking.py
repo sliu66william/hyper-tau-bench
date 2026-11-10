@@ -86,6 +86,7 @@ class BankingCustomer(APIModel):
     phone_number: str
     date_of_birth: str
     rho_bank_plus_subscription: Optional[bool] = None
+    parent_customer_id: Optional[str] = None
 
 
 class CustomerEmail(APIModel):
@@ -125,6 +126,7 @@ class CreditCardAccount(APIModel):
     credit_limit: Optional[float] = None
     past_due_amount: Optional[float] = None
     reward_points: str
+    card_last_four: Optional[str] = None
 
 
 class BankAccount(APIModel):
@@ -136,6 +138,7 @@ class BankAccount(APIModel):
     opened_on: str
     balance: float
     closed_on: Optional[str] = None
+    parent_account_id: Optional[str] = None
 
 
 class CustomerAccounts(APIModel):
@@ -151,6 +154,9 @@ class BankAccountTransaction(APIModel):
     description: str
     transaction_date: str
     status: str
+    available_amount: Optional[float] = None
+    hold_amount: Optional[float] = None
+    hold_release_date: Optional[str] = None
 
 
 class DebitCard(APIModel):
@@ -162,6 +168,27 @@ class DebitCard(APIModel):
     issue_reason: str
     issued_on: str
     card_design: Optional[str] = None
+    cardholder_name: Optional[str] = None
+    fraud_alert_active: Optional[bool] = None
+    alert_source: Optional[str] = None
+    pin_locked: Optional[bool] = None
+    pin_lock_reason: Optional[str] = None
+    pin_lock_timestamp: Optional[str] = None
+    pin_attempts_remaining: Optional[int] = None
+    pin_locks_last_90_days: Optional[int] = None
+    pin_last_changed: Optional[str] = None
+    last_successful_pin_transaction_date: Optional[str] = None
+    daily_atm_limit: Optional[float] = None
+    daily_atm_used: Optional[float] = None
+    daily_purchase_limit: Optional[float] = None
+    daily_purchase_used: Optional[float] = None
+    chip_verification_failures: Optional[int] = None
+    last_chip_failure_date: Optional[str] = None
+    international_enabled: Optional[bool] = None
+    online_enabled: Optional[bool] = None
+    velocity_blocked: Optional[bool] = None
+    stolen_reported_by: Optional[str] = None
+    stolen_reported_date: Optional[str] = None
 
 
 class VerificationReceipt(APIModel):
@@ -214,6 +241,7 @@ class DebitCardDispute(APIModel):
     maximum_liability_amount: float
     submitted_on: str
     card_action: str
+    expected_resolution_date: Optional[str] = None
 
 
 class ReplacementOrder(APIModel):
@@ -602,6 +630,7 @@ def _customer(record: dict[str, Any]) -> dict[str, Any]:
         "phone_number": record["phone_number"],
         "date_of_birth": record["date_of_birth"],
         "rho_bank_plus_subscription": record.get("rho_bank_plus_subscription"),
+        "parent_customer_id": record.get("parent_user_id"),
     }
 
 
@@ -652,6 +681,7 @@ def _credit_card_account(record: dict[str, Any]) -> dict[str, Any]:
             else None
         ),
         "reward_points": record.get("reward_points", "0 points"),
+        "card_last_four": record.get("card_last_4_digits"),
     }
 
 
@@ -668,6 +698,7 @@ def _bank_account(record: dict[str, Any]) -> dict[str, Any]:
         "opened_on": record.get("date_opened", ""),
         "balance": _money(record.get("current_holdings", record.get("balance", 0))),
         "closed_on": record.get("date_closed"),
+        "parent_account_id": record.get("parent_account_id"),
     }
 
 
@@ -680,6 +711,17 @@ def _bank_transaction(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         "description": record.get("description", ""),
         "transaction_date": record.get("date", ""),
         "status": record.get("status", "unknown"),
+        "available_amount": (
+            _money(record["available_amount"])
+            if record.get("available_amount") is not None
+            else None
+        ),
+        "hold_amount": (
+            _money(record["hold_amount"])
+            if record.get("hold_amount") is not None
+            else None
+        ),
+        "hold_release_date": record.get("hold_release_date"),
     }
 
 
@@ -693,6 +735,45 @@ def _debit_card(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         "issue_reason": record.get("issue_reason", "unknown"),
         "issued_on": record.get("issue_date", record.get("created_date", "")),
         "card_design": record.get("card_design"),
+        "cardholder_name": record.get("cardholder_name"),
+        "fraud_alert_active": record.get("fraud_alert_active"),
+        "alert_source": record.get("alert_source"),
+        "pin_locked": record.get("pin_locked"),
+        "pin_lock_reason": record.get("pin_lock_reason"),
+        "pin_lock_timestamp": record.get("pin_lock_timestamp"),
+        "pin_attempts_remaining": record.get("pin_attempts_remaining"),
+        "pin_locks_last_90_days": record.get("pin_locks_last_90_days"),
+        "pin_last_changed": record.get("pin_last_changed"),
+        "last_successful_pin_transaction_date": record.get(
+            "last_successful_pin_transaction_date"
+        ),
+        "daily_atm_limit": (
+            _money(record["daily_atm_limit"])
+            if record.get("daily_atm_limit") is not None
+            else None
+        ),
+        "daily_atm_used": (
+            _money(record["daily_atm_used"])
+            if record.get("daily_atm_used") is not None
+            else None
+        ),
+        "daily_purchase_limit": (
+            _money(record["daily_purchase_limit"])
+            if record.get("daily_purchase_limit") is not None
+            else None
+        ),
+        "daily_purchase_used": (
+            _money(record["daily_purchase_used"])
+            if record.get("daily_purchase_used") is not None
+            else None
+        ),
+        "chip_verification_failures": record.get("chip_verification_failures"),
+        "last_chip_failure_date": record.get("last_chip_failure_date"),
+        "international_enabled": record.get("international_enabled"),
+        "online_enabled": record.get("online_enabled"),
+        "velocity_blocked": record.get("velocity_blocked"),
+        "stolen_reported_by": record.get("stolen_reported_by"),
+        "stolen_reported_date": record.get("stolen_reported_date"),
     }
 
 
@@ -732,8 +813,9 @@ def _debit_card_dispute(record_id: str, record: dict[str, Any]) -> dict[str, Any
         ),
         "provisional_credit_amount": record.get("provisional_credit_amount"),
         "maximum_liability_amount": _money(record.get("customer_max_liability_amount")),
-        "submitted_on": record.get("submitted_at", ""),
+        "submitted_on": record.get("submitted_at") or record.get("filing_date", ""),
         "card_action": record.get("card_action", ""),
+        "expected_resolution_date": record.get("expected_resolution_date"),
     }
 
 
@@ -786,8 +868,8 @@ def _credit_limit_request(record_id: str, record: dict[str, Any]) -> dict[str, A
             if record.get("increase_amount") is not None
             else None
         ),
-        "denial_reason": record.get("denial_reason"),
-        "submitted_on": record.get("submitted_at"),
+        "denial_reason": record.get("denial_reason") or record.get("reason"),
+        "submitted_on": record.get("submitted_at") or record.get("submitted_date"),
         "decided_on": record.get("decision_date"),
     }
 

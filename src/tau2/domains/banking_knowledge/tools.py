@@ -2120,6 +2120,17 @@ For deposits without available images, the dispute will proceed based on custome
         success = add_to_db(
             "credit_limit_increase_requests", request_id, request_record, db=self.db
         )
+        if not success:
+            existing = self.db.credit_limit_increase_requests.data.get(request_id)
+            has_denial = any(
+                rec.get("credit_card_account_id") == credit_card_account_id
+                and rec.get("user_id") == user_id
+                and rec.get("status") == "DENIED"
+                for rec in self.db.credit_limit_increase_requests.data.values()
+            )
+            if existing is not None and has_denial:
+                self.db.credit_limit_increase_requests.data[request_id] = request_record
+                success = True
 
         if not success:
             return "Error: A similar request may already exist."
@@ -2349,12 +2360,16 @@ For deposits without available images, the dispute will proceed based on custome
             "status": "APPROVED",
         }
 
-        add_to_db(
+        added = add_to_db(
             "credit_limit_increase_requests",
             request_id,
             approval_record,
             db=self.db,
         )
+        if not added:
+            existing = self.db.credit_limit_increase_requests.data.get(request_id)
+            if existing is not None and existing.get("status") == "PENDING":
+                self.db.credit_limit_increase_requests.data[request_id] = approval_record
 
         return (
             f"Credit limit increase approved!\n"

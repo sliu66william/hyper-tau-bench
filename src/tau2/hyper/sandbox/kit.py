@@ -1211,6 +1211,7 @@ def build_construction_kit(
 
     if domain == "banking_knowledge":
         from tau2.hyper.client_api.banking_docs import (
+            append_binary_artifact_banking_contracts,
             rewrite_banking_client_api_file,
         )
 
@@ -1227,6 +1228,9 @@ def build_construction_kit(
                 before = path.read_bytes()
                 rewrite_banking_client_api_file(path)
                 rewritten_count += path.read_bytes() != before
+        append_binary_artifact_banking_contracts(
+            sop_variant_manifest, out_dir / "sop.md"
+        )
         logger.debug(
             f"  Rewrote {rewritten_count} Banking documents as Client API contracts"
         )
