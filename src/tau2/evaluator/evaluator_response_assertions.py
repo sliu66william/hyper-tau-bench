@@ -54,6 +54,9 @@ def _matching_response_snippets(
 
 
 def _normalized_opening_key(text: str, token_count: int) -> str | None:
+    from tau2.evaluator.evaluator_nl_assertions import strip_discourse_filler_prefix
+
+    text = strip_discourse_filler_prefix(text)
     text = re.sub(r"\*\*|`", " ", text)
     text = re.sub(r"#[A-Za-z]?\d+", "ID", text)
     text = re.sub(r"\b[A-Z0-9]{5,8}\b", "ID", text)

@@ -38,6 +38,7 @@ HOW TO DECIDE
 - Do not fail only because openings share one generic lead word such as "Yes", "No", "Thanks", "Great", "Please", "Next", "Now", or "Since".
 - For those generic lead words, fail only if the phrase after the generic lead word is also substantially the same reusable template. For example, "Please turn Data Roaming ON" and "Please disconnect the VPN" are not the same opening template.
 - Do not fail because multiple openings provide different sequential troubleshooting steps, even if each is imperative or starts with a transition word.
+- HONOR ASSERTION EXEMPTIONS: Carefully read the Assertion text provided in the user prompt. If the Assertion text exempts required identity-verification factor prompts (such as repeated email-address-plus-date-of-birth requests), exact required transfer wording, recurring fee or third-party disclaimer language, account-activity explanation labels, linked-account qualification terms, or stable completion wording across distinct entities/actions when required by policy, do NOT flag those exempted openings as violations.
 
 OUTPUT
 Return only valid JSON:
@@ -58,15 +59,36 @@ Set metExpectation to true only if no repeated opening phrase template appears.
 """
 
 
+_DISCOURSE_FILLER_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"(?:step\s+\d+|#\d+|\d+[.)])\s*[:,-]?\s*"
+    r"|(?:at\s+this\s+(?:stage|point|time|moment)|for\s+this\s+(?:item|step|request|account|case|card|order|part)|"
+    r"on\s+this\s+(?:account|item|card|order|request|matter)|right\s+now\s*,?\s*first|"
+    r"next\s+up\s+here|moving\s+on\s+now|to\s+begin\s+with|in\s+this\s+(?:case|situation)|"
+    r"as\s+a\s+next\s+step|first\s+of\s+all|from\s+here\s+on)\s*[.,;:-]\s*"
+    r")+",
+    re.IGNORECASE,
+)
+
+
+def strip_discourse_filler_prefix(text: str) -> str:
+    """Strip synthetic 2-4 word stage-setting filler prefixes used to game opening checks."""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if not cleaned:
+        return cleaned
+    stripped = _DISCOURSE_FILLER_PREFIX_RE.sub("", cleaned).strip()
+    return stripped or cleaned
+
+
 def _first_sentence_or_opening(text: str) -> str:
-    text = re.sub(r"\s+", " ", text).strip()
+    text = strip_discourse_filler_prefix(text)
     if not text:
         return text
 
     pieces = re.split(r"(?<=[.!?])\s+", text)
     opening = pieces[0].strip()
     token_count = len(re.findall(r"[A-Za-z0-9']+", opening))
-    if token_count <= 2 and len(pieces) > 1:
+    if token_count <= 4 and len(pieces) > 1:
         opening = f"{opening} {pieces[1].strip()}"
 
     words = opening.split()
@@ -239,13 +261,26 @@ class NLAssertionsEvaluator(EvaluatorBase[Message]):
         return NLAssertion.model_validate(assertion)
 
     @classmethod
+    def _format_trajectory_message(cls, message: Message) -> str:
+        tool_calls = getattr(message, "tool_calls", None) or []
+        if tool_calls:
+            rendered_calls = ", ".join(
+                f"{tc.name}({json.dumps(tc.arguments, sort_keys=True)})"
+                for tc in tool_calls
+            )
+            if message.content:
+                return f"{message.role} [tool_calls: {rendered_calls}]: {message.content}"
+            return f"{message.role} [tool_calls: {rendered_calls}]"
+        return f"{message.role}: {message.content}"
+
+    @classmethod
     def _evaluate_generic_nl_assertions(
         cls,
         trajectory: list[Message],
         nl_assertions: list[str],
     ) -> list[NLAssertionCheck]:
         trajectory_str = "\n".join(
-            [f"{message.role}: {message.content}" for message in trajectory]
+            [cls._format_trajectory_message(message) for message in trajectory]
         )
         # System prompt similar to the TypeScript implementation
         system_prompt = """
