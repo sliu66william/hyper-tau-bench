@@ -373,7 +373,7 @@ def _render_message(msg: Any) -> List[str]:
         if tool_calls:
             for tc in tool_calls:
                 lines.append(_render_tool_call(tc))
-    elif isinstance(msg, MultiToolMessage):
+    elif isinstance(msg, (MultiToolMessage, ToolMessage)):
         inner = _obj_attr(msg, "tool_messages", "messages", default=None)
         if inner:
             for tm in inner:
@@ -485,7 +485,7 @@ class BankingKnowledgeAgent:
         content = _obj_attr(message, "content", default=None)
         return bool(content) and "TRANSFERRED TO A HUMAN AGENT" in content
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         return None
 
     # -- internals ------------------------------------------------------

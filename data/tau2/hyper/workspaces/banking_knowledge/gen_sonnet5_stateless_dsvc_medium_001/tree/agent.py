@@ -590,7 +590,7 @@ class _BankingSupportAgent:
             return False
         return TRANSFER_PHRASE in content.upper() or TRANSFER_PHRASE in content
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         return None
 
     def set_seed(self, seed: int) -> None:

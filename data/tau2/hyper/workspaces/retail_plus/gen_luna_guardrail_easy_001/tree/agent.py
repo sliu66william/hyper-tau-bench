@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Tuple
 
-from tau2.data_model.message import AssistantMessage, MultiToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, MultiToolMessage, ToolMessage, UserMessage
 from tau2.hyper.agent_context import get_agent_context
 
 
@@ -197,7 +197,7 @@ class RetailAgent:
             )
         )
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         self.closed = True
 
 

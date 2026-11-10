@@ -401,7 +401,7 @@ class BankingSupportAgent:
             return True
         return False
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         self._stopped = True
 
     def set_seed(self, seed: int) -> None:

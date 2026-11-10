@@ -42,7 +42,7 @@ class BoardAssistant:
     def generate_next_message(
         self, message, state: BoardSession
     ) -> tuple[AssistantMessage, BoardSession]:
-        if isinstance(message, MultiToolMessage):
+        if isinstance(message, (MultiToolMessage, ToolMessage)):
             state.transcript.extend(message.tool_messages)
         else:
             state.transcript.append(message)

@@ -190,7 +190,7 @@ class _BankingAgent:
             return True
         return False
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         """No cleanup is required for this agent."""
         return None
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, List
 
-from tau2.data_model.message import AssistantMessage, MultiToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, MultiToolMessage, ToolMessage, UserMessage
 from tau2.hyper.agent_context import get_agent_context
 
 
@@ -275,7 +275,7 @@ class AirlineAgent:
             for phrase in ("conversation has ended", "goodbye", "take care")
         )
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         self.stopped = True
 
     def set_seed(self, seed: int) -> None:

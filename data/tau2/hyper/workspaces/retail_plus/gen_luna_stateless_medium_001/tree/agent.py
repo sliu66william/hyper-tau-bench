@@ -139,10 +139,11 @@ class RetailAgent:
             )
             return response, state
 
+        messages = self._context_messages(state, message)
         state.history.append(message)
         response = self.context.model_gateway.generate(
             model=self.model,
-            messages=self._context_messages(state, message),
+            messages=messages,
             actions=self.tools,
             tool_choice="auto",
         )
@@ -170,7 +171,7 @@ class RetailAgent:
         )
         return any(ending in text for ending in endings)
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         self._last_response = None
 
     def set_seed(self, seed: int) -> None:

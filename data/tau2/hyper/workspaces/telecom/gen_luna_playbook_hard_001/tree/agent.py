@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Tuple
 
-from tau2.data_model.message import AssistantMessage, MultiToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, MultiToolMessage, ToolMessage, UserMessage
 from tau2.hyper.agent_context import get_agent_context
 
 
@@ -166,6 +166,7 @@ def create_agent():
             self._stopped = False
 
         def get_init_state(self, message_history=None):
+            self._stopped = False
             return {
                 "messages": list(message_history or []),
                 "turns": 0,
@@ -219,7 +220,7 @@ def create_agent():
                 )
             )
 
-        def stop(self) -> None:
+        def stop(self, message: Any = None, state: Any = None) -> None:
             self._stopped = True
 
         def set_seed(self, seed: int) -> None:

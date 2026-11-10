@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Tuple
 
-from tau2.data_model.message import AssistantMessage, MultiToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, MultiToolMessage, ToolMessage, UserMessage
 from tau2.hyper.agent_context import get_agent_context
 
 
@@ -82,7 +82,7 @@ class BankingAgent:
         for item in state.history:
             if isinstance(item, UserMessage):
                 transcript.append("CUSTOMER:\n" + message_text(item))
-            elif isinstance(item, MultiToolMessage):
+            elif isinstance(item, (MultiToolMessage, ToolMessage)):
                 transcript.append("TOOL RESULTS:\n" + message_text(item))
             elif isinstance(item, AssistantMessage):
                 transcript.append("ASSISTANT:\n" + message_text(item))

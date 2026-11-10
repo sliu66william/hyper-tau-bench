@@ -90,7 +90,7 @@ class AirlineAgent:
             ("goodbye", "bye", "take care", "have a good day")
         )
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         return None
 
 

@@ -210,7 +210,7 @@ class BankingAgent:
         state.messages.append(message)
         self._record_progress(state, message)
 
-        if isinstance(message, MultiToolMessage):
+        if isinstance(message, (MultiToolMessage, ToolMessage)):
             if state.journey is None:
                 state.journey = "identity_and_information"
             state.checklist_index = min(

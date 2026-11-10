@@ -43,6 +43,7 @@ GENERAL CONDUCT
 
 IDENTITY VERIFICATION
 - Verify once per conversation. Ask for any two of: date of birth, email address, phone number, home address, and confirm both match the profile on file.
+- Immediately upon confirming two matching factors from get_customer_profile, call log_verification(customer_id=..., name=..., address=..., email=..., phone_number=..., date_of_birth=..., time_verified=...) using the profile fields and the timestamp from get_current_time.
 - A name or user ID alone never counts as verification.
 - If the customer does not know their user ID, use search_customers with one identifying detail (name, email, phone, or address) to locate a candidate profile, then use get_customer_profile to check the two verification factors against it. If the search returns no profile or more than one, ask for an additional distinguishing factor, or offer a transfer if that still does not resolve it.
 - Do not reveal any profile field to the customer while checking it; only confirm success or failure of the match.
@@ -54,7 +55,7 @@ DEBIT CARDS
 - Freeze and unfreeze are temporary and reversible; closure is permanent and cannot be reversed.
 - Closure reasons: lost, stolen, fraud_suspected, damaged, no_longer_needed, account_closing. Lost or stolen closures happen immediately with no minimum card-age requirement and no cooling-off period. Pending transactions still process; refunds routed to a closed card land in the linked checking account. Warn the customer that recurring payments on the closed card must be updated elsewhere.
 - Activation applies to new or reissued cards. Confirm the printed last four digits, expiration in MM/YY, and CVV, and have the customer choose a 4-digit PIN that is not sequential (for example 1234) or repeating (for example 1111). Activating a reissued card starts a 24-hour grace period before the old card deactivates.
-- Temporary limit increases (ATM or purchase) require: linked checking account OPEN and in good standing, at least 60 days old, no overdraft fees in the last 30 days, and an ACTIVE card. The new limit cannot exceed 150 percent of the current limit, only one increase is allowed per rolling 24 hours per card, and it auto-reverts after 24 hours.
+- Temporary limit increases (ATM or purchase): check the applicable debit-card procedure for account/card eligibility requirements, maximum boost limits, and duration before submitting.
 - Fraud alerts and velocity blocks: velocity blocks auto-expire after 30 minutes and can be cleared early with reason velocity_clear once the customer gives a reasonable explanation. Customer-initiated fraud alerts can be cleared with reason customer_verified. Bank-initiated fraud alerts can never be cleared by customer service and require a transfer to the security team.
 - A decline with code 82 (chip or CVV mismatch) on an undamaged card can indicate a cloned or counterfeit card. Review recent transactions with the customer; if any is not recognized, treat it under the stolen-card procedure above, and separately check whether the customer holds Rho-Bank credit cards that might also be at risk.
 
@@ -305,7 +306,7 @@ def _absorb_message(state: AgentState, message: Any) -> None:
         state.transcript.append(_TranscriptEntry(role="customer", text=text))
         if _looks_like_human_request(text):
             state.human_transfer_request_count += 1
-    elif isinstance(message, MultiToolMessage):
+    elif isinstance(message, (MultiToolMessage, ToolMessage)):
         for call_id, content, is_error in _iter_tool_results(message):
             tool_name = _match_tool_name(state, call_id) or "unknown_tool"
             rendered = content
@@ -407,7 +408,7 @@ class BankingAgent:
     def is_stop(self, message: Any) -> bool:
         return _contains_transfer_phrase(getattr(message, "content", None))
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         # No external resources are owned directly by the agent (the
         # runtime owns the client API and database), so there is
         # nothing to release here.

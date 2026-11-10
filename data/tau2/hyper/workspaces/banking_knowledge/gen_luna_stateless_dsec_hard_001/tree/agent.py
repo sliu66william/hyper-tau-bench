@@ -134,7 +134,7 @@ class BankingAgent:
         history = list(state.get("history", []))
         history.append(message)
 
-        if isinstance(message, MultiToolMessage):
+        if isinstance(message, (MultiToolMessage, ToolMessage)):
             history.extend(list(getattr(message, "messages", ()) or ()))
         elif isinstance(message, ToolMessage):
             history.append(message)
@@ -174,7 +174,7 @@ class BankingAgent:
             in _as_text(message).upper()
         )
 
-    def stop(self) -> None:
+    def stop(self, message: Any = None, state: Any = None) -> None:
         self.ended = True
 
 
