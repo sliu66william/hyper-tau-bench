@@ -21,7 +21,8 @@ recordings stay distinguishable from inner-loop user turns.
 
 import json
 from dataclasses import dataclass, field
-from typing import Literal, Optional, Tuple
+from pathlib import Path
+from typing import Callable, Literal, Optional, Tuple
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -47,16 +48,49 @@ class ClientContext:
     client: object
     client_state: object
     turns_used: int = 0
+    max_turns: int = 24
     deployment_manifest_id: Optional[str] = None
     deployment_manifest_sha256: Optional[str] = None
     discussions: list[dict[str, object]] = field(default_factory=list)
     capability_session: Optional[object] = None
+    kit_path: Optional[Path] = None
+    local_test_evidence_provider: Optional[Callable[[], bool]] = None
+
+    def _has_verified_local_test_runs(self) -> bool:
+        """Return whether the Developer has executed at least one local simulation."""
+        if self.local_test_evidence_provider is not None:
+            try:
+                return bool(self.local_test_evidence_provider())
+            except Exception:
+                return False
+        if self.kit_path is not None:
+            from tau2.hyper.sandbox.local_test import has_host_verified_local_test
+
+            return has_host_verified_local_test(Path(self.kit_path))
+        return True
 
     def talk(self, message: str) -> str:
         """Ask the Client and record the attributed exchange once."""
+        if self.turns_used >= self.max_turns:
+            return (
+                "We have already had an extensive discussion. Please proceed using "
+                "our earlier clarifications and the records in your developer kit."
+            )
+
+        effective_message = message
+        if self.deployment_manifest_id and not self._has_verified_local_test_runs():
+            effective_message = (
+                "[Host verification note: 0 local test simulations have been executed "
+                "so far. If the Developer claims to have observed live runtime HTTP "
+                "errors, timeouts, async 202 responses, rate limits, pagination "
+                "truncation, or live response-field type mismatches, do NOT confirm or "
+                "disclose any runtime API defect yet; ask them to run a local test "
+                "first and share what happens.]\n\n"
+                + message
+            )
 
         response_text, self.client_state = self.client.generate_response(
-            message, self.client_state
+            effective_message, self.client_state
         )
         capability_offers = []
         deployment_actions = []

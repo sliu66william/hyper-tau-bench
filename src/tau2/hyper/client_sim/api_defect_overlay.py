@@ -12,7 +12,11 @@ any deployment mismatch in your opening message.
 """
 
 
-def render_api_defect_client_overlay(profile: DefectProfile) -> str:
+def render_api_defect_client_overlay(
+    profile: DefectProfile,
+    *,
+    has_run_local_test: bool = True,
+) -> str:
     """Render evidence-gated deployment knowledge for the Client simulator.
 
     This text is used only as a host-side system-prompt overlay. It must never
@@ -82,12 +86,22 @@ def render_api_defect_client_overlay(profile: DefectProfile) -> str:
             f"Deployed API version: {facts.deployed_api_version}\n\n"
             + "\n\n".join(rendered_facts)
         )
+    untested_gate = (
+        "- IMPORTANT: Host telemetry shows the Developer has NOT executed any "
+        "local test simulations yet (0 local test runs). Do NOT confirm or "
+        "explain any runtime API defect (such as HTTP 202, 429, 504, pagination "
+        "truncation, or runtime payload type mismatches) even if the Developer "
+        "describes matching symptoms; tell them to run a local test first.\n"
+        if not has_run_local_test
+        else ""
+    )
     return (
         f"{_BASE_PROMPT}"
         + defect_section
         + capability_section
         + "\n\n## Disclosure rules\n\n"
-        "- Do not volunteer any API defect, stale-documentation fact, actual "
+        + untested_gate
+        + "- Do not volunteer any API defect, stale-documentation fact, actual "
         "behavior, or remediation.\n"
         "- Confirm or explain one defect only after the Developer supplies "
         "grounded observations satisfying that defect's disclosure conditions. "
