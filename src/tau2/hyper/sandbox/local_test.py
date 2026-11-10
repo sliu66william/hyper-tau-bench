@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
@@ -28,6 +29,16 @@ class LocalTestWiring:
     client_api_mode: Optional[str] = None
     client_api_defect_profile: Optional[Any] = None
     capability_snapshot_provider: Optional[Callable[[], Any]] = None
+    allowed_agent_models: Optional[list[dict[str, Any]]] = None
+    performance_requirements: Optional[list[Any]] = None
+
+
+_HOST_VERIFIED_TESTED_KITS: set[str] = set()
+
+
+def has_host_verified_local_test(kit_path: Path) -> bool:
+    """Return whether the host has executed at least one local test for kit_path."""
+    return str(Path(kit_path).resolve()) in _HOST_VERIFIED_TESTED_KITS
 
 
 class SandboxToolError(Exception):
@@ -172,6 +183,8 @@ class LocalTestService:
         docker_cpus: Optional[str] = None,
         response_phrasing_pack: Optional[Any] = None,
         local_test_wiring: Optional[LocalTestWiring] = None,
+        allowed_agent_models: Optional[list[dict[str, Any]]] = None,
+        performance_requirements: Optional[list[Any]] = None,
     ):
         self.sandbox_root = Path(sandbox_root).resolve()
         if not self.sandbox_root.is_dir():
@@ -181,10 +194,57 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
+        self.run_count: int = 0
+        self.seeded_run_count: int = 0
+        self.mock_run_count: int = 0
+        self.observed_tool_names: set[str] = set()
+
+        # Freeze the canonical deployment manifest on the host at initialization
+        # time before the untrusted Developer container can modify /workspace.
+        self._canonical_manifest: Optional[dict[str, Any]] = None
+        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        if manifest_path.is_file():
+            try:
+                self._canonical_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                self._canonical_manifest = None
+
+        effective_models = allowed_agent_models or (
+            local_test_wiring.allowed_agent_models if local_test_wiring is not None else None
+        )
+        effective_perf = performance_requirements if performance_requirements is not None else (
+            local_test_wiring.performance_requirements if local_test_wiring is not None else None
+        )
+        if effective_models is not None or effective_perf is not None:
+            base = deepcopy(self._canonical_manifest) if isinstance(self._canonical_manifest, dict) else {}
+            if effective_models is not None:
+                base["allowed_agent_models"] = deepcopy(effective_models)
+            if effective_perf is not None:
+                base["performance_requirements"] = [
+                    req.model_dump(mode="json") if hasattr(req, "model_dump") else deepcopy(req)
+                    for req in effective_perf
+                ]
+            self._canonical_manifest = base
+
+    def has_run_local_test(self) -> bool:
+        """Return whether the Developer has executed at least one local simulation."""
+        return self.run_count > 0
+
+    def get_testing_telemetry(self) -> dict[str, Any]:
+        """Return host-verified local test execution telemetry."""
+        return {
+            "run_count": self.run_count,
+            "seeded_run_count": self.seeded_run_count,
+            "mock_run_count": self.mock_run_count,
+            "observed_tool_names": sorted(self.observed_tool_names),
+        }
 
     def _resolve_path(self, path: str) -> Path:
-        """Resolve a path relative to the sandbox root, blocking escapes."""
-        resolved = (self.sandbox_root / path).resolve()
+        """Resolve a path relative to the sandbox root, blocking escapes and symlinks."""
+        candidate = self.sandbox_root / path
+        if candidate.is_symlink():
+            raise SandboxToolError(f"Symlink paths are not allowed: {path!r}")
+        resolved = candidate.resolve()
         if not resolved.is_relative_to(self.sandbox_root):
             raise SandboxToolError(
                 f"Path escapes sandbox: {path!r} resolves to {resolved}"
@@ -197,20 +257,37 @@ class LocalTestService:
         if resolved.is_file():
             return [resolved]
         if resolved.is_dir():
-            return sorted(resolved.glob("*.json"))
+            return sorted(p for p in resolved.glob("*.json") if not p.is_symlink())
         raise SandboxToolError(f"Scenario path not found: {task_path}")
 
     def _load_developer_manifest(self) -> dict:
-        """Load the developer-facing deployment manifest from the kit."""
+        """Load the canonical deployment manifest, ignoring Developer tampering."""
         manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        if self._canonical_manifest is not None:
+            # Restore on-disk file if the Developer modified or removed it inside the kit.
+            try:
+                on_disk = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else None
+            except Exception:
+                on_disk = None
+            if on_disk != self._canonical_manifest and manifest_path.parent.is_dir() and not manifest_path.is_symlink():
+                try:
+                    manifest_path.write_text(
+                        json.dumps(self._canonical_manifest, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
+            return deepcopy(self._canonical_manifest)
         if not manifest_path.is_file():
             raise SandboxToolError(
                 "framework/deployment_manifest.json not found in sandbox root"
             )
         try:
-            return json.loads(manifest_path.read_text())
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             raise SandboxToolError(f"Invalid {manifest_path.name}: {e}") from e
+        self._canonical_manifest = deepcopy(loaded)
+        return deepcopy(loaded)
 
     def _resolve_local_test_wiring(self) -> LocalTestWiring:
         """Return the trusted runtime wiring supplied by the harness."""
@@ -581,6 +658,14 @@ class LocalTestService:
                 )
 
         if results or error_count:
+            self.run_count += 1
+            _HOST_VERIFIED_TESTED_KITS.add(str(self.sandbox_root))
+            for result in results:
+                for message in getattr(result, "messages", []) or []:
+                    for tc in getattr(message, "tool_calls", None) or []:
+                        tc_name = getattr(tc, "name", None)
+                        if tc_name:
+                            self.observed_tool_names.add(str(tc_name))
             avg_reward = sum(result.reward for result in results) / len(task_files)
             passed = sum(1 for result in results if result.reward >= 1.0)
             output_blocks.append(
@@ -600,6 +685,7 @@ class LocalTestService:
             performance_requirements,
             [message for result in results for message in result.messages],
             credit_usages,
+            task_rewards=[result.reward for result in results],
         )
         latency = performance["summary"]
         if latency["sample_count"]:
