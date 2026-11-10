@@ -185,10 +185,13 @@ def test_strip_removes_benchmark_naming_project_root_files():
 
     The repo README names the benchmark lineage; pyproject.toml names the
     public repo, homepage, and authors. They are needed only for uv sync,
-    which runs before the strip.
+    which runs before the strip. Similarly, evaluator and user_simulator
+    sources/prompts must never ship inside the Developer container.
     """
     root = set(strip.REMOVE_PROJECT_ROOT)
-    assert {"README.md", "pyproject.toml", "uv.lock"} <= root
+    assert {"README.md", "pyproject.toml", "uv.lock", "data/tau2/user_simulator"} <= root
+    outside = set(strip.REMOVE_OUTSIDE_HYPER)
+    assert {"evaluator", "user", "runner", "metrics", "gym", "registry.py", "run.py"} <= outside
 
 
 def test_kit_git_identity_is_neutral():
