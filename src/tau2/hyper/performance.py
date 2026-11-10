@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from statistics import mean
 from typing import Any, Optional
 
@@ -115,6 +115,7 @@ def evaluate_performance_requirements(
     requirements: list[PerformanceRequirement],
     messages: Iterable[Message],
     credit_usages: Iterable[Optional[Mapping[str, Any]]] = (),
+    task_rewards: Optional[Sequence[float]] = None,
 ) -> dict:
     """Evaluate hard latency gates and soft set-wide mean credit budgets.
 
@@ -122,6 +123,12 @@ def evaluate_performance_requirements(
     incurred on those models (its tier's pool); requirements without a scope
     meter every credit. Overages from multiple credit requirements add up —
     tier scopes are disjoint, so each tier's overspend penalizes once.
+
+    To prevent 0-token abort arbitrage (where an agent intentionally aborts a
+    subset of conversations with 0.0 credits to dilute credit overages on
+    other conversations), explicit 0-credit aborts on failed tasks are excluded
+    from the effective overage denominator when other conversations exceed the
+    budget.
     """
     latency_samples = collect_agent_turn_latencies(messages)
     credit_requirements = [
@@ -131,6 +138,7 @@ def evaluate_performance_requirements(
     ]
     usages = list(credit_usages) if credit_requirements else []
     credit_samples = collect_conversation_credits(usages) if credit_requirements else []
+    rewards_list = list(task_rewards) if task_rewards is not None else None
     latency_summary = {
         "sample_count": len(latency_samples),
         "p50_seconds": _percentile(latency_samples, 50),
@@ -166,13 +174,43 @@ def evaluate_performance_requirements(
             continue
 
         if requirement.models is None:
+            model_scope = None
             requirement_samples = credit_samples
         else:
-            requirement_samples = collect_conversation_credits(
-                usages, set(requirement.models)
-            )
+            model_scope = set(requirement.models)
+            requirement_samples = collect_conversation_credits(usages, model_scope)
         observed_mean = mean(requirement_samples) if requirement_samples else None
+        effective_mean = observed_mean
+        if requirement_samples and any(c > requirement.budget for c in requirement_samples):
+            # Exclude failed-task low/zero-credit aborts from diluting over-budget tasks.
+            non_abort_samples = []
+            abort_floor = 0.05 * requirement.budget
+            for idx, usage_item in enumerate(usages):
+                if usage_item is None:
+                    continue
+                sample_vals = collect_conversation_credits([usage_item], model_scope)
+                if not sample_vals:
+                    continue
+                credit_val = sample_vals[0]
+                passed_task = (
+                    rewards_list is not None
+                    and idx < len(rewards_list)
+                    and rewards_list[idx] >= 1.0
+                )
+                is_failed_abort = (
+                    isinstance(usage_item, Mapping)
+                    and not passed_task
+                    and (credit_val == 0.0 or (rewards_list is not None and credit_val < abort_floor))
+                )
+                if not is_failed_abort:
+                    non_abort_samples.append(credit_val)
+            if non_abort_samples:
+                effective_mean = max(observed_mean or 0.0, mean(non_abort_samples))
+
         credit_summary["budget"] = requirement.budget
+        if effective_mean is not None and observed_mean is not None and effective_mean > observed_mean:
+            credit_summary["mean_credits"] = effective_mean
+            observed_mean = effective_mean
         mean_overage = (
             max(0.0, observed_mean / requirement.budget - 1.0)
             if observed_mean is not None
