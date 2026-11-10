@@ -25,7 +25,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -73,7 +74,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -132,7 +134,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -185,7 +188,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -266,7 +270,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -307,7 +312,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -347,7 +353,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -436,7 +443,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -536,7 +544,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -581,7 +590,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -612,7 +622,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -668,7 +679,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -748,7 +760,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -790,7 +803,8 @@
       "reward_basis": [
         "DB",
         "COMMUNICATE",
-        "ACTION"
+        "ACTION",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -898,7 +912,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -951,7 +966,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1004,7 +1020,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1084,7 +1101,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1231,7 +1249,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1271,7 +1290,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1346,7 +1366,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1419,7 +1440,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1499,7 +1521,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1692,7 +1715,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1764,7 +1788,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1839,7 +1864,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1870,7 +1896,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1912,7 +1939,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -1944,7 +1972,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2032,7 +2061,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2103,7 +2133,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2134,7 +2165,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2229,7 +2261,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2322,7 +2355,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2353,7 +2387,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2425,7 +2460,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2465,7 +2501,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2547,7 +2584,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2598,7 +2636,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2721,7 +2760,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2781,7 +2821,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2878,7 +2919,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -2991,7 +3033,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3072,7 +3115,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3312,7 +3356,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3353,7 +3398,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3384,7 +3430,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3424,7 +3471,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3464,7 +3512,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3504,7 +3553,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3554,7 +3604,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3604,7 +3655,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3636,7 +3688,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3707,7 +3760,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3739,7 +3793,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3773,7 +3828,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3847,7 +3903,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3891,7 +3948,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -3965,7 +4023,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4008,7 +4067,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4061,7 +4121,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4105,7 +4166,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4155,7 +4217,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4199,7 +4262,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4243,7 +4307,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4325,7 +4390,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null
@@ -4374,7 +4440,8 @@
       ],
       "reward_basis": [
         "DB",
-        "COMMUNICATE"
+        "COMMUNICATE",
+        "NL_ASSERTION"
       ]
     },
     "annotations": null

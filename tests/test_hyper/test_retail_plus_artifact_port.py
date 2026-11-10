@@ -525,7 +525,9 @@ def test_render_provenance_pins_match():
             pattern = group.get(glob_key)
             if not pattern:
                 continue
-            current = {str(p.relative_to(DST_ROOT)) for p in DST_ROOT.glob(pattern)}
+            current = {
+                p.relative_to(DST_ROOT).as_posix() for p in DST_ROOT.glob(pattern)
+            }
             pinned = {rel for rel in group[files_key] if fnmatch.fnmatch(rel, pattern)}
             if current != pinned:
                 problems.append(
