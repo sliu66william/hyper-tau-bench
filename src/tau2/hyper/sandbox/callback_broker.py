@@ -90,6 +90,14 @@ class CallbackBroker:
             response_phrasing_pack=response_phrasing_pack,
             local_test_wiring=local_test_wiring,
         )
+        if (
+            self.client_context is not None
+            and getattr(self.client_context, "api_test_telemetry_provider", None) is None
+            and hasattr(self._toolkit, "get_client_api_test_telemetry")
+        ):
+            self.client_context.api_test_telemetry_provider = (
+                self._toolkit.get_client_api_test_telemetry
+            )
 
     @property
     def client_tool_enabled(self) -> bool:

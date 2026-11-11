@@ -220,3 +220,32 @@ def test_all_defects_manifest_facts_never_enter_candidate_kit(tmp_path):
     assert profile.manifest_sha256 not in corpus
     for fact in profile.client.defects:
         assert fact.actual_behavior not in corpus
+
+
+def test_client_context_injects_per_defect_host_telemetry_without_polluting_discussions():
+    seen_prompts = []
+
+    class _InspectClient:
+        def generate_response(self, message, state):
+            seen_prompts.append(message)
+            return "acknowledged", state
+
+    telemetry_state = {"seeded_runs": 1, "triggered_defect_ids": []}
+    context = ClientContext(
+        client=_InspectClient(),
+        client_state={},
+        deployment_manifest_id="retail_plus/all_defects_v1",
+        deployment_manifest_sha256="b" * 64,
+        api_test_telemetry_provider=lambda: telemetry_state,
+    )
+
+    context.talk("I saw negative refund amounts on getOrder")
+    assert "seeded_local_runs=1, host_observed_defect_ids=[]" in seen_prompts[0]
+    assert context.discussions[0]["developer_message"] == (
+        "I saw negative refund amounts on getOrder"
+    )
+
+    telemetry_state["triggered_defect_ids"] = ["refund_sign"]
+    context.talk("Now getOrder really returned a negative refund")
+    assert "host_observed_defect_ids=['refund_sign']" in seen_prompts[1]
+

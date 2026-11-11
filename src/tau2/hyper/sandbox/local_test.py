@@ -193,6 +193,9 @@ class LocalTestService:
         self.max_scenarios_per_call = max_scenarios_per_call
         self.max_total_scenarios = max_total_scenarios
         self.scenarios_executed = 0
+        self.seeded_runs_executed = 0
+        self.triggered_defect_ids: set[str] = set()
+        self.exercised_operations: set[str] = set()
         self._canonical_manifest: Optional[dict[str, Any]] = None
         manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
         if (
@@ -228,6 +231,14 @@ class LocalTestService:
                     for req in local_test_wiring.performance_requirements
                 ]
             self._canonical_manifest = base
+
+    def get_client_api_test_telemetry(self) -> dict[str, Any]:
+        """Return host-verified Client API telemetry from seeded local runs."""
+        return {
+            "seeded_runs": self.seeded_runs_executed,
+            "triggered_defect_ids": sorted(self.triggered_defect_ids),
+            "exercised_operations": sorted(self.exercised_operations),
+        }
 
     def _resolve_path(self, path: str) -> Path:
         """Resolve a path relative to the sandbox root, blocking escapes and symlinks."""
@@ -576,6 +587,16 @@ class LocalTestService:
                     client_api_developer_test_scenario_id=developer_test_scenario_id,
                 )
                 projected_messages = _inner.project_messages(result.messages)
+                if scenario_client_api_mode != "mock":
+                    self.seeded_runs_executed += 1
+                    defect_report = result.client_api_defect_report or {}
+                    for event in defect_report.get("events") or []:
+                        if isinstance(event, dict) and event.get("defect_id"):
+                            self.triggered_defect_ids.add(str(event["defect_id"]))
+                    for msg in result.messages or []:
+                        for sem_call in getattr(msg, "semantic_tool_calls", None) or []:
+                            if getattr(sem_call, "name", None):
+                                self.exercised_operations.add(str(sem_call.name))
                 developer_visible_result = result.model_dump(mode="json")
                 developer_visible_result.pop("client_api_defect_report", None)
                 # The sandbox-local run artifact is Developer-readable, so

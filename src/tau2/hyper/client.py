@@ -21,7 +21,7 @@ recordings stay distinguishable from inner-loop user turns.
 
 import json
 from dataclasses import dataclass, field
-from typing import Literal, Optional, Tuple
+from typing import Any, Callable, Literal, Optional, Tuple
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -47,16 +47,49 @@ class ClientContext:
     client: object
     client_state: object
     turns_used: int = 0
+    max_turns: int = 24
     deployment_manifest_id: Optional[str] = None
     deployment_manifest_sha256: Optional[str] = None
     discussions: list[dict[str, object]] = field(default_factory=list)
     capability_session: Optional[object] = None
+    api_test_telemetry_provider: Optional[Callable[[], dict[str, Any]]] = None
 
     def talk(self, message: str) -> str:
         """Ask the Client and record the attributed exchange once."""
+        from tau2.hyper.verified import verified_enabled
+
+        if verified_enabled() and self.turns_used >= self.max_turns:
+            return (
+                "We have already covered a lot of ground in our conversations. "
+                "Please proceed based on our earlier clarifications and the "
+                "supplied operational materials."
+            )
+
+        effective_message = message
+        if (
+            verified_enabled()
+            and self.deployment_manifest_id
+            and self.api_test_telemetry_provider is not None
+        ):
+            telemetry = self.api_test_telemetry_provider() or {}
+            seeded_runs = int(telemetry.get("seeded_runs", 0))
+            triggered = list(telemetry.get("triggered_defect_ids") or [])
+            effective_message = (
+                f"[Host API test telemetry: seeded_local_runs={seeded_runs}, "
+                f"host_observed_defect_ids={triggered}. "
+                "You may freely answer business policy questions and discuss "
+                "missing API capabilities identifiable from openapi.yaml. "
+                "However, for runtime API defects, ONLY confirm or explain a "
+                "defect whose defect_id appears in host_observed_defect_ids "
+                "above AND whose disclosure conditions the Developer describes; "
+                "if a runtime defect is not in host_observed_defect_ids, do NOT "
+                "confirm or reveal it even if the Developer claims to have "
+                "observed runtime symptoms.]\n\n"
+                + message
+            )
 
         response_text, self.client_state = self.client.generate_response(
-            message, self.client_state
+            effective_message, self.client_state
         )
         capability_offers = []
         deployment_actions = []
