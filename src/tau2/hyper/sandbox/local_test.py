@@ -37,6 +37,10 @@ class SandboxToolError(Exception):
     """Raised when a sandbox tool operation fails."""
 
 
+MAX_SCENARIOS_PER_LOCAL_TEST_CALL = 25
+MAX_TOTAL_LOCAL_TEST_SCENARIOS = 250
+
+
 _REST_PRIVATE_SETUP_ERROR = (
     "REST-mode Developer scenarios cannot initialize private Client state; "
     "use the documented development seed and assistant wrapper tools"
@@ -175,6 +179,8 @@ class LocalTestService:
         docker_cpus: Optional[str] = None,
         response_phrasing_pack: Optional[Any] = None,
         local_test_wiring: Optional[LocalTestWiring] = None,
+        max_scenarios_per_call: int = MAX_SCENARIOS_PER_LOCAL_TEST_CALL,
+        max_total_scenarios: int = MAX_TOTAL_LOCAL_TEST_SCENARIOS,
     ):
         self.sandbox_root = Path(sandbox_root).resolve()
         if not self.sandbox_root.is_dir():
@@ -184,6 +190,9 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
+        self.max_scenarios_per_call = max_scenarios_per_call
+        self.max_total_scenarios = max_total_scenarios
+        self.scenarios_executed = 0
         self._canonical_manifest: Optional[dict[str, Any]] = None
         manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
         if (
@@ -391,6 +400,23 @@ class LocalTestService:
         task_files = self._collect_local_task_files(task_path)
         if not task_files:
             raise SandboxToolError(f"No .json scenario files found at: {task_path}")
+
+        from tau2.hyper.verified import verified_enabled
+
+        if verified_enabled():
+            if len(task_files) > self.max_scenarios_per_call:
+                raise SandboxToolError(
+                    f"Scenario batch at {task_path!r} contains {len(task_files)} "
+                    f"files, exceeding the per-call limit of "
+                    f"{self.max_scenarios_per_call}"
+                )
+            if self.scenarios_executed + len(task_files) > self.max_total_scenarios:
+                raise SandboxToolError(
+                    f"Local-test scenario quota exhausted "
+                    f"({self.scenarios_executed}/{self.max_total_scenarios} used; "
+                    f"requested {len(task_files)})"
+                )
+            self.scenarios_executed += len(task_files)
 
         # Import lazily to avoid a module cycle at import time:
         # builder -> tools -> orchestrator -> builder.

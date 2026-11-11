@@ -663,3 +663,22 @@ def test_local_test_freezes_manifest_against_developer_tampering(tmp_path):
     )
     assert service._load_developer_manifest() == canonical
 
+
+def test_local_test_caps_directory_scenario_batching(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    scenarios.mkdir()
+    for idx in range(4):
+        (scenarios / f"s_{idx}.json").write_text(
+            json.dumps({"id": f"s_{idx}", "user_scenario": {"instructions": "hi"}})
+        )
+    service = LocalTestService(
+        tmp_path,
+        local_test_wiring=LocalTestWiring(domain="telecom", user_llm="gpt-5.5"),
+        max_scenarios_per_call=3,
+        max_total_scenarios=5,
+    )
+    with pytest.raises(SandboxToolError, match="exceeding the per-call limit of 3"):
+        service.run_local_test("scenarios")
+    assert service.scenarios_executed == 0
+
+
