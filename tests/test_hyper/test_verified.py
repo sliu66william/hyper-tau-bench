@@ -306,3 +306,36 @@ def test_contract_lists_exactly_the_sealed_runner_arguments():
     accepted = section.split("own constraints:", 1)[1].split("Any other argument", 1)[0]
     listed = set(accepted.split("`")[1::2])
     assert listed == set(_SAFE_CANDIDATE_MODEL_KWARGS)
+
+
+def test_banking_client_prompts_and_binary_sidecars_use_rest_contracts(
+    tmp_path, monkeypatch
+):
+    from tau2.hyper.client_api.banking_docs import (
+        _operation_index,
+        write_banking_binary_api_contract_sidecar,
+    )
+    from tau2.hyper.client_sim.instructions import resolve_task_client_instructions
+    from tau2.hyper.task_loader import load_active_hyper_tau_tasks
+
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    op_index = _operation_index()
+    for task in load_active_hyper_tau_tasks():
+        if task.source_domain == "banking_knowledge" and task.client_sections:
+            prompt = resolve_task_client_instructions(task)
+            leaked = [name for name in op_index if name in prompt]
+            assert not leaked, f"{task.id} leaked legacy names: {leaked}"
+
+    diagram = tmp_path / "flowchart_03.png"
+    diagram.write_bytes(b"\x89PNG\r\n\x1a\n")
+    ops = write_banking_binary_api_contract_sidecar(
+        diagram, "Step 3: call downgrade_credit_card_3847 with target_card_type."
+    )
+    assert ops
+    sidecar = tmp_path / "flowchart_03_api_contracts.md"
+    assert sidecar.is_file()
+    text = sidecar.read_text()
+    assert "POST /v1/credit-card-accounts/{account_id}/downgrades" in text
+    assert "downgrade_credit_card_3847" not in text
+    assert "database" not in text.lower()
+

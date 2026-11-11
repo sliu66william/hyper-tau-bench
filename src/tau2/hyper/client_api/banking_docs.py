@@ -422,3 +422,29 @@ def rewrite_banking_client_api_file(path: Path) -> tuple[ClientOperation, ...]:
     if rewritten.content != original:
         path.write_bytes(rewritten.content)
     return rewritten.operations
+
+
+def write_banking_binary_api_contract_sidecar(
+    binary_path: Path, source_text: str | None
+) -> tuple[ClientOperation, ...]:
+    """Write a companion Markdown contract next to a binary diagram/PDF when needed.
+
+    Binary PDFs and PNG flowcharts cannot be rewritten in place without
+    re-rendering, so when a delivered binary artifact's text rendition
+    references Banking Client API operations, attach a clean REST contract
+    sidecar right beside that artifact in ``uploaded_materials/`` without
+    exposing legacy ``_NNNN`` tool names or modifying ``sop.md``.
+    """
+    if not source_text or not binary_path.is_file():
+        return ()
+    _, referenced = _replace_operation_references(source_text)
+    if not referenced:
+        return ()
+    contracts = "\n\n---\n\n".join(_operation_contract(op) for op in referenced)
+    sidecar = binary_path.with_name(f"{binary_path.stem}_api_contracts.md")
+    sidecar.write_text(
+        f"# Referenced API contracts ({binary_path.name})\n\n{contracts}\n",
+        encoding="utf-8",
+    )
+    return referenced
+

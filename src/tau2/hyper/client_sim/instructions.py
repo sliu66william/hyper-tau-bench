@@ -484,11 +484,24 @@ def resolve_task_client_instructions(task) -> str:
         }
         # Contested facts are held, so the unreachable check above already
         # guarantees their sections are in client_sections.
-        return render_client_instructions(
+        prompt = render_client_instructions(
             task.source_domain,
             list(task.client_sections),
             client_held=held,
             client_confirmable=confirmable,
             client_contested=contested,
         ).prompt
+        from tau2.hyper.verified import verified_enabled
+
+        if (
+            verified_enabled()
+            and getattr(task, "source_domain", None) == "banking_knowledge"
+            and getattr(task, "client_api_mode", None) == "rest"
+        ):
+            from tau2.hyper.client_api.banking_docs import (
+                rewrite_banking_client_api_text,
+            )
+
+            prompt = rewrite_banking_client_api_text(prompt)
+        return prompt
     return task.client_instructions
