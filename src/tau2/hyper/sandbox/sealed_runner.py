@@ -8,6 +8,7 @@ candidate-visible state and messages. LLM requests are mediated by the host.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import stat
 import subprocess
