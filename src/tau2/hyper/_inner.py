@@ -259,6 +259,21 @@ def _apply_client_api_defect_report(
         }
 
 
+def _apply_constraint_violations(result: EvaluationResult) -> None:
+    """Zero task reward under τ^τ-Verified when pinned model constraints were violated."""
+    from tau2.hyper.verified import verified_enabled
+
+    if not verified_enabled():
+        return
+    violations = result.agent_constraint_violations or {}
+    if int(violations.get("violations", 0)) > 0:
+        result.reward = 0.0
+        result.reward_breakdown = {
+            **(result.reward_breakdown or {}),
+            "MODEL_CONSTRAINTS": 0.0,
+        }
+
+
 def _apply_discoverable_grounding(
     result: EvaluationResult,
     task: Task,
@@ -587,6 +602,7 @@ def run_inner_simulation(
         agent_credit_usage=agent_credit_usage,
         agent_constraint_violations=agent_constraint_violations,
     )
+    _apply_constraint_violations(result)
     collect_mock_report = getattr(
         environment,
         "collect_client_api_mock_report",

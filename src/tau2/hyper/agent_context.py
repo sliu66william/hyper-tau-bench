@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from threading import Lock
 from typing import Any, Iterator, Mapping, Optional, Sequence
@@ -185,6 +186,64 @@ def reasoning_off_pin(constraints: Mapping[str, Any]) -> Optional[str]:
         pinned = _pinned_value(constraints, path)
         if pinned is off_value or pinned == off_value:
             return f"{'.'.join(path)}={off_value!r}"
+    return None
+
+
+def _has_reasoning_or_thinking_constraint(constraints: Mapping[str, Any]) -> bool:
+    """Return whether ``constraints`` restricts reasoning or thinking behavior."""
+    if "reasoning_effort" in constraints or "thinking" in constraints:
+        return True
+    extra_body = constraints.get("extra_body")
+    if isinstance(extra_body, Mapping) and (
+        "thinking" in extra_body or "reasoning" in extra_body
+    ):
+        return True
+    return False
+
+
+def _verified_enabled() -> bool:
+    """Container-safe check for TAU2_VERIFIED without importing host-only modules."""
+    return os.environ.get("TAU2_VERIFIED", "1") != "0"
+
+
+def _cross_spelling_reasoning_conflict(
+    constraints: Mapping[str, Any], kwargs: Mapping[str, Any]
+) -> Optional[str]:
+    """Detect cross-key attempts to enable or escalate reasoning on constrained seats."""
+    if not _verified_enabled() or not _has_reasoning_or_thinking_constraint(constraints):
+        return None
+
+    off_pin = reasoning_off_pin(constraints)
+    eb_effort = _pinned_value(constraints, ("extra_body", "reasoning", "effort"))
+
+    if "reasoning_effort" not in constraints and "reasoning_effort" in kwargs:
+        val = kwargs["reasoning_effort"]
+        if off_pin is not None:
+            if val not in (None, "none"):
+                return f"reasoning_effort={val!r} conflicts with pinned {off_pin}"
+        elif eb_effort is not None:
+            allowed_eb = choice_values(eb_effort)
+            if allowed_eb is not None:
+                if val not in allowed_eb:
+                    return (
+                        f"reasoning_effort={val!r} conflicts with "
+                        f"extra_body.reasoning.effort one_of {allowed_eb!r}"
+                    )
+            elif val != eb_effort:
+                return (
+                    f"reasoning_effort={val!r} conflicts with "
+                    f"pinned extra_body.reasoning.effort={eb_effort!r}"
+                )
+        else:
+            return (
+                f"reasoning_effort={val!r} conflicts with configured thinking constraint"
+            )
+
+    if "thinking" not in constraints and "thinking" in kwargs:
+        if not (off_pin is not None and kwargs["thinking"] == {"type": "disabled"}):
+            target = f"pinned {off_pin}" if off_pin is not None else "configured reasoning/thinking constraint"
+            return f"thinking={kwargs['thinking']!r} conflicts with {target}"
+
     return None
 
 
@@ -402,6 +461,8 @@ class ModelGateway:
                 _constraint_permits(expected, name, kwargs)
                 for name, expected in config.constrained_args.items()
             )
+            and _cross_spelling_reasoning_conflict(config.constrained_args, kwargs)
+            is None
         ]
         if len(matches) == 1:
             return matches[0]
@@ -423,6 +484,11 @@ class ModelGateway:
                     f"one of {choices!r}" if choices is not None else repr(expected)
                 )
                 conflicts.append(f"{name} must be {requirement}, got {kwargs[name]!r}")
+            cross_conflict = _cross_spelling_reasoning_conflict(
+                config.constrained_args, kwargs
+            )
+            if cross_conflict is not None:
+                conflicts.append(cross_conflict)
             details = ", ".join(conflicts)
             raise ValueError(f"Model call violates configured constraints: {details}")
 
@@ -452,6 +518,18 @@ class ModelGateway:
                     "call must choose one explicitly"
                 )
         request_args.update(kwargs)
+        if (
+            _verified_enabled()
+            and _has_reasoning_or_thinking_constraint(config.constrained_args)
+            and "extra_body" not in config.constrained_args
+            and isinstance(kwargs.get("extra_body"), Mapping)
+        ):
+            eb_kw = kwargs["extra_body"]
+            if "thinking" in eb_kw or "reasoning" in eb_kw:
+                raise ValueError(
+                    "Model call violates configured constraints: extra_body "
+                    "reasoning/thinking override conflicts with pinned constraint"
+                )
         return request_args
 
     def generate(

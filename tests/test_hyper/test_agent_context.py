@@ -620,3 +620,101 @@ def test_collect_message_constraint_violations_checks_stock_messages():
         )
         is None
     )
+
+
+def test_model_gateway_rejects_cross_spelling_reasoning_escalation(monkeypatch):
+    monkeypatch.setattr(
+        agent_context,
+        "generate",
+        lambda **_kwargs: pytest.fail("provider must not be called"),
+    )
+    context = build_agent_context(
+        domain="airline_plus",
+        tools=[],
+        resource_root=RESOURCE_ROOT,
+        model_configs=[
+            {
+                "model": "anthropic/claude-sonnet-5",
+                "constraints": {"extra_body": {"thinking": {"type": "disabled"}}},
+            },
+            {
+                "model": "gpt-5.4-nano",
+                "constraints": {"reasoning_effort": "none"},
+            },
+        ],
+    )
+
+    with pytest.raises(ValueError, match="conflicts with pinned"):
+        context.model_gateway.generate(
+            model="anthropic/claude-sonnet-5",
+            messages=[],
+            thinking={"type": "enabled", "budget_tokens": 16000},
+        )
+    with pytest.raises(ValueError, match="conflicts with pinned"):
+        context.model_gateway.generate(
+            model="anthropic/claude-sonnet-5",
+            messages=[],
+            reasoning_effort="high",
+        )
+    with pytest.raises(ValueError, match="conflicts with"):
+        context.model_gateway.generate(
+            model="gpt-5.4-nano",
+            messages=[],
+            thinking={"type": "enabled", "budget_tokens": 8000},
+        )
+    with pytest.raises(ValueError, match="conflicts with"):
+        context.model_gateway.generate(
+            model="gpt-5.4-nano",
+            messages=[],
+            extra_body={"thinking": {"type": "enabled", "budget_tokens": 16000}},
+        )
+
+    capped = build_agent_context(
+        domain="airline_plus",
+        tools=[],
+        resource_root=RESOURCE_ROOT,
+        model_configs=[
+            {
+                "model": "capped-one-of",
+                "constraints": {"reasoning_effort": {"one_of": ["none", "low"]}},
+            },
+            {
+                "model": "capped-thinking",
+                "constraints": {
+                    "extra_body": {"thinking": {"type": "enabled", "budget_tokens": 2048}}
+                },
+            },
+        ],
+    )
+    with pytest.raises(ValueError, match="conflicts with"):
+        capped.model_gateway.generate(
+            model="capped-one-of",
+            messages=[],
+            reasoning_effort="low",
+            thinking={"type": "enabled", "budget_tokens": 64000},
+        )
+    with pytest.raises(ValueError, match="conflicts with"):
+        capped.model_gateway.generate(
+            model="capped-thinking",
+            messages=[],
+            reasoning_effort="xhigh",
+        )
+
+
+def test_apply_constraint_violations_zeroes_eval_reward_under_verified(monkeypatch):
+    from tau2.hyper._inner import _apply_constraint_violations
+    from tau2.hyper.data_model import EvaluationResult
+
+    monkeypatch.setenv("TAU2_VERIFIED", "1")
+    res = EvaluationResult(
+        task_id="t1",
+        reward=1.0,
+        messages=[],
+        reward_breakdown={"DB": 1.0},
+        agent_constraint_violations={"violations": 1, "by_model": {}},
+    )
+    _apply_constraint_violations(res)
+    assert res.reward == 0.0
+    assert res.reward_breakdown["MODEL_CONSTRAINTS"] == 0.0
+
+

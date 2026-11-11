@@ -62,6 +62,13 @@ def test_candidate_server_imports_in_a_domainless_runtime(tmp_path):
                 "tau2.hyper.sandbox.callback_mcp, tau2.hyper.sandbox.model_gateway, "
                 "tau2.hyper.harnesses.codex_driver, tau2.hyper.harnesses.prompt_arg_driver, "
                 "tau2.hyper.harnesses.turn_loop_driver, tau2.agent.llm_agent; "
+                "from pathlib import Path; "
+                "from tau2.data_model.message import AssistantMessage, UserMessage; "
+                "import tau2.hyper.agent_context as ac; "
+                "ac.generate = lambda **kw: AssistantMessage(role='assistant', content='ok'); "
+                "ctx = ac.build_agent_context(domain='telecom', tools=[], resource_root=Path('.'), "
+                "model_configs=[{'model': 'gpt-5.4-nano', 'constraints': {'reasoning_effort': 'none'}}]); "
+                "ctx.model_gateway.generate(model='gpt-5.4-nano', messages=[UserMessage(role='user', content='hi')]); "
                 "print('import ok')"
             ),
         ],
