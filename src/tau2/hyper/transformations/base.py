@@ -202,7 +202,7 @@ class SectionTransformation(ABC):
                 f"that allows {modality}."
             )
         return KitFile(
-            relative_path=str(Path(kit_file.relative_path).with_suffix(".txt")),
+            relative_path=Path(kit_file.relative_path).with_suffix(".txt").as_posix(),
             content=text.encode(),
             preserve_filename=kit_file.preserve_filename,
             substituted_from=modality,

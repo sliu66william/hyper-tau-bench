@@ -1,7 +1,10 @@
 # Copyright Sierra
 """Audio preprocessing utilities for voice synthesis and transcription."""
 
-import audioop
+try:
+    import audioop
+except ModuleNotFoundError:  # Python 3.13+ removed stdlib audioop
+    audioop = None  # type: ignore[assignment]
 from copy import deepcopy
 from dataclasses import dataclass
 from math import gcd

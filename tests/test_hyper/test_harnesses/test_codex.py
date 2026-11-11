@@ -221,3 +221,21 @@ def test_native_builder_enforces_positive_step_limit(tmp_path, monkeypatch):
     assert result.done_reason == "max_steps"
     assert result.total_steps == 2
     assert [step.content for step in result.steps] == ["step 1", "step 2"]
+
+
+def test_codex_builder_resolves_env_overrides_dynamically(tmp_path, monkeypatch):
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text('{"models": ["gpt-6.1-sol"]}')
+    monkeypatch.setenv("TAU2_CODEX_HARNESS_VERSION", "0.167.0")
+    monkeypatch.setenv("TAU2_CODEX_GATEWAY_PROVIDER", "chatgpt")
+    monkeypatch.setenv("TAU2_CODEX_MODEL_CATALOG", str(catalog))
+
+    builder = CodexSandboxBuilder("gpt-6.1-sol", llm_args={"reasoning_effort": "xhigh"})
+    config = builder.render_runtime_config(include_client_tool=False)
+    files = builder.runtime_files(include_client_tool=False)
+
+    assert builder.harness_identity().version == "0.167.0"
+    assert 'base_url = "http://tau2-model-gateway:8143/chatgpt/v1"' in config
+    assert 'model_catalog_json = "/runtime-home/.codex/model_catalog.json"' in config
+    assert files["/runtime-home/.codex/model_catalog.json"] == '{"models": ["gpt-6.1-sol"]}'
+

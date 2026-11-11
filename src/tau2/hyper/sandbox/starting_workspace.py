@@ -70,11 +70,10 @@ def iter_workspace_tree_files(tree_dir: Path) -> list[Path]:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    raw = path.read_bytes()
+    if b"\x00" not in raw and b"\r\n" in raw:
+        raw = raw.replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def compute_workspace_pins(workspace_dir: Path) -> dict[str, str]:

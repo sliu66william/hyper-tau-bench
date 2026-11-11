@@ -368,7 +368,7 @@ class SupportTranscriptsTransformation(SectionTransformation):
         primary = Path(kit_file.relative_path)
         kit_file.companions = [
             KitFile(
-                relative_path=str(primary.with_name(f"{primary.stem}{tag}.m4a")),
+                relative_path=primary.with_name(f"{primary.stem}{tag}.m4a").as_posix(),
                 content=recording_path.read_bytes(),
             )
             for tag, recording_path in recordings
