@@ -188,6 +188,59 @@ def reasoning_off_pin(constraints: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
+def _cross_spelling_reasoning_conflict(
+    constraints: Mapping[str, Any], kwargs: Mapping[str, Any]
+) -> Optional[str]:
+    """Detect cross-key attempts to enable or escalate reasoning on pinned seats."""
+    from tau2.hyper.verified import verified_enabled
+
+    if not verified_enabled():
+        return None
+    off_pin = reasoning_off_pin(constraints)
+    if off_pin is not None:
+        if (
+            "reasoning_effort" not in constraints
+            and "reasoning_effort" in kwargs
+            and kwargs["reasoning_effort"] not in (None, "none")
+        ):
+            return (
+                f"reasoning_effort={kwargs['reasoning_effort']!r} conflicts with "
+                f"pinned {off_pin}"
+            )
+        if (
+            "thinking" not in constraints
+            and "thinking" in kwargs
+            and kwargs["thinking"] != {"type": "disabled"}
+        ):
+            return f"thinking={kwargs['thinking']!r} conflicts with pinned {off_pin}"
+
+    pinned_eb_effort = _pinned_value(constraints, ("extra_body", "reasoning", "effort"))
+    if (
+        pinned_eb_effort is not None
+        and choice_values(pinned_eb_effort) is None
+        and "reasoning_effort" not in constraints
+        and "reasoning_effort" in kwargs
+        and kwargs["reasoning_effort"] != pinned_eb_effort
+    ):
+        return (
+            f"reasoning_effort={kwargs['reasoning_effort']!r} conflicts with "
+            f"pinned extra_body.reasoning.effort={pinned_eb_effort!r}"
+        )
+
+    pinned_top_effort = _pinned_value(constraints, ("reasoning_effort",))
+    if (
+        (pinned_top_effort is not None and choice_values(pinned_top_effort) is None)
+        or (pinned_eb_effort is not None and choice_values(pinned_eb_effort) is None)
+    ):
+        if (
+            "thinking" not in constraints
+            and "thinking" in kwargs
+            and kwargs["thinking"] != {"type": "disabled"}
+        ):
+            return "thinking override conflicts with pinned reasoning effort"
+    return None
+
+
 def reasoning_evidence(raw_data: Any) -> Optional[str]:
     """Return where a provider response carries reasoning output, if anywhere.
 
@@ -402,6 +455,8 @@ class ModelGateway:
                 _constraint_permits(expected, name, kwargs)
                 for name, expected in config.constrained_args.items()
             )
+            and _cross_spelling_reasoning_conflict(config.constrained_args, kwargs)
+            is None
         ]
         if len(matches) == 1:
             return matches[0]
@@ -423,6 +478,11 @@ class ModelGateway:
                     f"one of {choices!r}" if choices is not None else repr(expected)
                 )
                 conflicts.append(f"{name} must be {requirement}, got {kwargs[name]!r}")
+            cross_conflict = _cross_spelling_reasoning_conflict(
+                config.constrained_args, kwargs
+            )
+            if cross_conflict is not None:
+                conflicts.append(cross_conflict)
             details = ", ".join(conflicts)
             raise ValueError(f"Model call violates configured constraints: {details}")
 

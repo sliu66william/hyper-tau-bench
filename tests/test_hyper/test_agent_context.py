@@ -620,3 +620,46 @@ def test_collect_message_constraint_violations_checks_stock_messages():
         )
         is None
     )
+
+
+def test_model_gateway_rejects_cross_spelling_reasoning_escalation(monkeypatch):
+    monkeypatch.setattr(
+        agent_context,
+        "generate",
+        lambda **_kwargs: pytest.fail("provider must not be called"),
+    )
+    context = build_agent_context(
+        domain="airline_plus",
+        tools=[],
+        resource_root=RESOURCE_ROOT,
+        model_configs=[
+            {
+                "model": "anthropic/claude-sonnet-5",
+                "constraints": {"extra_body": {"thinking": {"type": "disabled"}}},
+            },
+            {
+                "model": "gpt-5.4-nano",
+                "constraints": {"reasoning_effort": "none"},
+            },
+        ],
+    )
+
+    with pytest.raises(ValueError, match="conflicts with pinned"):
+        context.model_gateway.generate(
+            model="anthropic/claude-sonnet-5",
+            messages=[],
+            thinking={"type": "enabled", "budget_tokens": 16000},
+        )
+    with pytest.raises(ValueError, match="conflicts with pinned"):
+        context.model_gateway.generate(
+            model="anthropic/claude-sonnet-5",
+            messages=[],
+            reasoning_effort="high",
+        )
+    with pytest.raises(ValueError, match="conflicts with pinned"):
+        context.model_gateway.generate(
+            model="gpt-5.4-nano",
+            messages=[],
+            thinking={"type": "enabled", "budget_tokens": 8000},
+        )
+
