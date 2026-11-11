@@ -239,14 +239,56 @@ class NLAssertionsEvaluator(EvaluatorBase[Message]):
         return NLAssertion.model_validate(assertion)
 
     @classmethod
+    def _format_trajectory_for_judge(cls, trajectory: list[Message]) -> str:
+        from tau2.data_model.message import ToolMessage
+        from tau2.hyper.verified import verified_enabled
+
+        if not verified_enabled():
+            return "\n".join(
+                f"{message.role}: {message.content}" for message in trajectory
+            )
+
+        has_semantic_trace = any(
+            isinstance(m, ToolMessage) and m.semantic_tool_calls is not None
+            for m in trajectory
+        )
+        lines: list[str] = []
+        for message in trajectory:
+            if has_semantic_trace and isinstance(message, ToolMessage):
+                sem_calls = message.semantic_tool_calls or []
+                if sem_calls:
+                    rendered = ", ".join(
+                        f"{tc.name}({json.dumps(tc.arguments, sort_keys=True)})"
+                        for tc in sem_calls
+                    )
+                    lines.append(
+                        f"{message.role} [executed_operations: {rendered}]: {message.content}"
+                    )
+                    continue
+            elif not has_semantic_trace:
+                tcalls = getattr(message, "tool_calls", None) or []
+                if tcalls:
+                    rendered = ", ".join(
+                        f"{tc.name}({json.dumps(tc.arguments, sort_keys=True)})"
+                        for tc in tcalls
+                    )
+                    if message.content:
+                        lines.append(
+                            f"{message.role} [tool_calls: {rendered}]: {message.content}"
+                        )
+                    else:
+                        lines.append(f"{message.role} [tool_calls: {rendered}]")
+                    continue
+            lines.append(f"{message.role}: {message.content}")
+        return "\n".join(lines)
+
+    @classmethod
     def _evaluate_generic_nl_assertions(
         cls,
         trajectory: list[Message],
         nl_assertions: list[str],
     ) -> list[NLAssertionCheck]:
-        trajectory_str = "\n".join(
-            [f"{message.role}: {message.content}" for message in trajectory]
-        )
+        trajectory_str = cls._format_trajectory_for_judge(trajectory)
         # System prompt similar to the TypeScript implementation
         system_prompt = """
         TASK

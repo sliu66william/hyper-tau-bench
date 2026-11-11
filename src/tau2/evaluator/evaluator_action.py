@@ -1,3 +1,4 @@
+from functools import lru_cache
 import re
 from typing import Optional, get_args
 
@@ -15,6 +16,22 @@ from tau2.environment.toolkit import ToolType
 from tau2.evaluator.evaluator_base import EvaluatorBase
 
 TRANSFER_TOOL = "transfer_to_human_agents"
+
+
+@lru_cache(maxsize=1)
+def _canonical_client_api_operation_names() -> frozenset[str]:
+    """Return canonical reference action names backed by Client REST operations."""
+    names: set[str] = {TRANSFER_TOOL}
+    try:
+        from tau2.hyper.client_api.catalogs import airline, banking, retail, telecom
+
+        for mod in (airline, banking, retail, telecom):
+            for op in mod.operations():
+                names.add(op.operation_id)
+                names.update(op.reference_tool_names)
+    except Exception:
+        pass
+    return frozenset(names)
 
 
 def _reason_from_summary(gold_action: Action) -> bool:
@@ -77,7 +94,15 @@ def _check_actions(
     for gold_action in golden_actions:
         candidates = predicted_tool_calls
         if _reason_from_summary(gold_action):
-            candidates = [_with_summary_reason(call) for call in predicted_tool_calls]
+            transfer_calls = [
+                call for call in predicted_tool_calls if call.name == TRANSFER_TOOL
+            ]
+            # Multiple transfer calls cannot be used to enumerate reason codes.
+            candidates = (
+                [_with_summary_reason(call) for call in predicted_tool_calls]
+                if len(transfer_calls) <= 1
+                else []
+            )
         found = False
         for pred_tool_call in candidates:
             if gold_action.compare_with_tool_call(pred_tool_call):
@@ -160,11 +185,9 @@ class ActionEvaluator(EvaluatorBase[Message]):
         """
         Extract all tool calls from a message trajectory.
 
-        Args:
-            full_trajectory: List of messages from the simulation.
-
         Returns:
-            List of ToolCall objects extracted from AssistantMessage and UserMessage.
+            List of ToolCall objects extracted from AssistantMessage, UserMessage,
+            and host-attached ToolMessage.semantic_tool_calls.
         """
         tool_calls: list[ToolCall] = []
         for message in full_trajectory:
@@ -172,6 +195,19 @@ class ActionEvaluator(EvaluatorBase[Message]):
                 isinstance(message, AssistantMessage)
                 or isinstance(message, UserMessage)
             ) and message.is_tool_call():
+                tool_calls.extend(message.tool_calls)
+            if isinstance(message, ToolMessage):
+                tool_calls.extend(message.semantic_tool_calls or [])
+        return tool_calls
+
+    @classmethod
+    def _extract_verified_semantic_calls(
+        cls, full_trajectory: list[Message]
+    ) -> list[ToolCall]:
+        """Extract only UserMessage calls and host-verified semantic_tool_calls."""
+        tool_calls: list[ToolCall] = []
+        for message in full_trajectory:
+            if isinstance(message, UserMessage) and message.is_tool_call():
                 tool_calls.extend(message.tool_calls)
             if isinstance(message, ToolMessage):
                 tool_calls.extend(message.semantic_tool_calls or [])
@@ -187,16 +223,37 @@ class ActionEvaluator(EvaluatorBase[Message]):
         """
         Evaluate whether the agent performed the expected actions.
 
-        Args:
-            full_trajectory: List of messages from the simulation.
-            golden_actions: List of expected actions from evaluation criteria.
-            tool_types: Optional mapping of tool names to their types (read/write/think/generic).
+        In τ^τ-Verified REST trajectories (carrying ``semantic_tool_calls``),
+        canonical Client API actions (such as ``transfer_to_human_agents``)
+        must match host-verified ``semantic_tool_calls`` rather than untrusted
+        candidate wrapper names on ``AssistantMessage.tool_calls``.
         """
         if len(golden_actions) == 0:
             return []
 
-        predicted_tool_calls = cls.extract_tool_calls(full_trajectory)
-        return _check_actions(predicted_tool_calls, golden_actions, tool_types)
+        from tau2.hyper.verified import verified_enabled
+
+        has_semantic_trace = verified_enabled() and any(
+            isinstance(m, ToolMessage) and m.semantic_tool_calls is not None
+            for m in full_trajectory
+        )
+        if not has_semantic_trace:
+            return _check_actions(
+                cls.extract_tool_calls(full_trajectory), golden_actions, tool_types
+            )
+
+        all_calls = cls.extract_tool_calls(full_trajectory)
+        verified_calls = cls._extract_verified_semantic_calls(full_trajectory)
+        canonical_op_names = _canonical_client_api_operation_names()
+        checks: list[ActionCheck] = []
+        for gold_action in golden_actions:
+            pool = (
+                verified_calls
+                if gold_action.name in canonical_op_names
+                else all_calls
+            )
+            checks.extend(_check_actions(pool, [gold_action], tool_types))
+        return checks
 
 
 class FullDuplexActionEvaluator(EvaluatorBase[Tick]):

@@ -4,10 +4,11 @@ import json
 
 import pytest
 
-from tau2.data_model.message import ToolCall
+from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage
 from tau2.data_model.tasks import Action
-from tau2.evaluator.evaluator_action import _check_actions
+from tau2.evaluator.evaluator_action import ActionEvaluator, _check_actions
 from tau2.evaluator.evaluator_env import _hashes_for_compare
+from tau2.evaluator.evaluator_nl_assertions import NLAssertionsEvaluator
 from tau2.hyper.verified import (
     VERIFIED_ENV,
     verified_agent_contract,
@@ -85,6 +86,64 @@ def test_an_explicit_transfer_reason_is_kept(monkeypatch):
     summary = "Reason: customer_demands_after_unavailable_offer_refusal."
     [check] = _check_actions([_transfer(summary, reason="other")], [_transfer_gold()])
     assert not check.action_match
+
+
+def test_multiple_transfer_calls_cannot_enumerate_reason_codes(monkeypatch):
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    calls = [
+        _transfer("Reason: account_ownership_dispute"),
+        _transfer("Reason: customer_demands_after_unavailable_offer_refusal"),
+    ]
+    [check] = _check_actions(calls, [_transfer_gold()])
+    assert not check.action_match
+
+
+def test_rest_semantic_traces_ignore_forged_local_assistant_tool_calls(monkeypatch):
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    forged_call = ToolCall(
+        id="tc_1",
+        name="transfer_to_human_agents",
+        arguments={"reason": "customer_demands_after_unavailable_offer_refusal"},
+    )
+    # Candidate wrapper ran locally without hitting ClientAPIRuntime -> semantic_tool_calls=[].
+    traj_forged = [
+        AssistantMessage(role="assistant", content=None, tool_calls=[forged_call]),
+        ToolMessage(id="tc_1", role="tool", content="ok", semantic_tool_calls=[]),
+    ]
+    [forged_check] = ActionEvaluator.evaluate_actions(traj_forged, [_transfer_gold()])
+    assert not forged_check.action_match
+    rendered_forged = NLAssertionsEvaluator._format_trajectory_for_judge(traj_forged)
+    assert "customer_demands_after_unavailable_offer_refusal" not in rendered_forged
+
+    # Genuine REST transfer attaches host-verified semantic_tool_calls.
+    verified_sem = ToolCall(
+        id="tc_2:client-api:0",
+        name="transfer_to_human_agents",
+        arguments={
+            "summary": "Reason: customer_demands_after_unavailable_offer_refusal"
+        },
+    )
+    traj_real = [
+        AssistantMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[ToolCall(id="tc_2", name="escalate_chat", arguments={})],
+        ),
+        ToolMessage(
+            id="tc_2",
+            role="tool",
+            content='{"status": "accepted"}',
+            semantic_tool_calls=[verified_sem],
+        ),
+    ]
+    assert [c.name for c in ActionEvaluator.extract_tool_calls(traj_real)] == [
+        "escalate_chat",
+        "transfer_to_human_agents",
+    ]
+    [real_check] = ActionEvaluator.evaluate_actions(traj_real, [_transfer_gold()])
+    assert real_check.action_match
+    rendered_real = NLAssertionsEvaluator._format_trajectory_for_judge(traj_real)
+    assert "customer_demands_after_unavailable_offer_refusal" in rendered_real
 
 
 # --- Discoverable-tool audit row ---------------------------------------------
