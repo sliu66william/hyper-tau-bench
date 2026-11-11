@@ -82,6 +82,14 @@ def render_api_defect_client_overlay(profile: DefectProfile) -> str:
             f"Deployed API version: {facts.deployed_api_version}\n\n"
             + "\n\n".join(rendered_facts)
         )
+    from tau2.hyper.verified import verified_enabled
+
+    telemetry_clause = (
+        " (and, when a `[Host API test telemetry: ...]` note is present, only "
+        "when that defect's ID appears in `host_observed_defect_ids`)"
+        if verified_enabled()
+        else ""
+    )
     return (
         f"{_BASE_PROMPT}"
         + defect_section
@@ -90,7 +98,8 @@ def render_api_defect_client_overlay(profile: DefectProfile) -> str:
         "- Do not volunteer any API defect, stale-documentation fact, actual "
         "behavior, or remediation.\n"
         "- Confirm or explain one defect only after the Developer supplies "
-        "grounded observations satisfying that defect's disclosure conditions. "
+        "grounded observations satisfying that defect's disclosure conditions"
+        f"{telemetry_clause}. "
         "Discuss only the matching defect.\n"
         "- For a cohort-specific defect, matching observed evidence is also "
         "required before treating it as active in the Developer's scenario. "

@@ -28,7 +28,7 @@ from loguru import logger
 from tau2.data_model.tasks import Task
 from tau2.hyper._inner import run_inner_simulations
 from tau2.hyper.agent_context import constraints_allow, resolve_stock_constraints
-from tau2.hyper.client import ClientContext
+from tau2.hyper.client import ClientContext, HostAPITestTelemetry
 from tau2.hyper.client_api import CLIENT_API_CONTRACT_VERSION
 from tau2.hyper.client_api.capabilities import (
     CapabilityDeploymentSession,
@@ -554,6 +554,7 @@ class SandboxOrchestrator:
         self._client_context: Optional[ClientContext] = None
         self._capability_session: Optional[CapabilityDeploymentSession] = None
         self._deployment_snapshot: Optional[DeploymentSnapshot] = None
+        self._api_test_telemetry: HostAPITestTelemetry = HostAPITestTelemetry()
 
     @classmethod
     def from_task(
@@ -792,6 +793,7 @@ class SandboxOrchestrator:
                     self.allowed_agent_models or self.task.allowed_agent_models
                 ),
                 performance_requirements=self.task.performance_requirements,
+                api_test_telemetry=self._api_test_telemetry,
             )
 
     def run(
@@ -839,6 +841,7 @@ class SandboxOrchestrator:
         self._capability_session = None
         self._deployment_snapshot = None
         self._sample_scenarios_ctx = None
+        self._api_test_telemetry = HostAPITestTelemetry()
 
         # Phase 1: Build the kit
         logger.info(f"Phase 1: Building kit at {kit_path}")
@@ -923,6 +926,7 @@ class SandboxOrchestrator:
                     profile.manifest_sha256 if profile is not None else None
                 ),
                 capability_session=self._capability_session,
+                api_test_telemetry_provider=self._api_test_telemetry.snapshot,
             )
             self.builder.set_client_context(self._client_context)
 
@@ -1299,6 +1303,7 @@ class SandboxOrchestrator:
                 client_api_mode=self.task.client_api_mode,
                 eval_kind="train",
             )
+            self._api_test_telemetry.record_results(results)
             return format_sample_scenario_results(results)
         finally:
             dev_env.close()
@@ -1328,6 +1333,7 @@ class SandboxOrchestrator:
                 client_api_mode=self.task.client_api_mode,
                 eval_kind="live",
             )
+            self._api_test_telemetry.record_results(results)
             return format_live_experiment_results(results)
         finally:
             dev_env.close()
