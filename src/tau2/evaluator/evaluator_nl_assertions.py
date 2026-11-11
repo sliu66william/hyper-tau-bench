@@ -88,6 +88,29 @@ def _assistant_response_openings(trajectory: list[Message]) -> list[str]:
     return openings
 
 
+_VERIFIED_OPENINGS_EXEMPTION_RULE = (
+    "- HONOR ASSERTION EXEMPTIONS: Carefully read the Assertion text in the user "
+    "prompt. When the Assertion exempts required identity-verification factor "
+    "prompts (such as repeated email-address-plus-date-of-birth requests), exact "
+    "required transfer wording, recurring fee or third-party disclaimer language, "
+    "account-activity explanation labels, linked-account qualification terms, or "
+    "stable completion wording across distinct entities/actions when required by "
+    "policy, do NOT flag those exempted openings as violations.\n"
+)
+
+
+def _response_openings_system_prompt() -> str:
+    from tau2.hyper.verified import verified_enabled
+
+    if not verified_enabled():
+        return RESPONSE_OPENINGS_SYSTEM_PROMPT
+    return RESPONSE_OPENINGS_SYSTEM_PROMPT.replace(
+        "\nOUTPUT\n",
+        f"{_VERIFIED_OPENINGS_EXEMPTION_RULE}\nOUTPUT\n",
+        1,
+    )
+
+
 def _evaluate_response_openings_assertion(
     trajectory: list[Message],
     assertion: NLAssertion,
@@ -107,7 +130,7 @@ Assistant response openings:
     assistant_message = generate(
         model=DEFAULT_LLM_NL_ASSERTIONS,
         messages=[
-            SystemMessage(role="system", content=RESPONSE_OPENINGS_SYSTEM_PROMPT),
+            SystemMessage(role="system", content=_response_openings_system_prompt()),
             UserMessage(role="user", content=user_prompt),
         ],
         call_name="nl_assertions_response_openings_eval",

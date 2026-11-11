@@ -87,6 +87,13 @@ def test_an_explicit_transfer_reason_is_kept(monkeypatch):
     assert not check.action_match
 
 
+def test_openings_system_prompt_honors_exemptions_under_verified(monkeypatch):
+    from tau2.evaluator.evaluator_nl_assertions import _response_openings_system_prompt
+
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    assert "HONOR ASSERTION EXEMPTIONS" in _response_openings_system_prompt()
+    monkeypatch.setenv(VERIFIED_ENV, "0")
+    assert "HONOR ASSERTION EXEMPTIONS" not in _response_openings_system_prompt()
 # --- Discoverable-tool audit row ---------------------------------------------
 
 
