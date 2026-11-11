@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
@@ -28,6 +29,8 @@ class LocalTestWiring:
     client_api_mode: Optional[str] = None
     client_api_defect_profile: Optional[Any] = None
     capability_snapshot_provider: Optional[Callable[[], Any]] = None
+    allowed_agent_models: Optional[list[dict[str, Any]]] = None
+    performance_requirements: Optional[list[Any]] = None
 
 
 class SandboxToolError(Exception):
@@ -181,10 +184,54 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
+        self._canonical_manifest: Optional[dict[str, Any]] = None
+        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        if (
+            manifest_path.is_file()
+            and not manifest_path.is_symlink()
+            and not manifest_path.parent.is_symlink()
+        ):
+            try:
+                loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    self._canonical_manifest = loaded
+            except (OSError, json.JSONDecodeError):
+                self._canonical_manifest = None
+
+        if local_test_wiring is not None and (
+            local_test_wiring.allowed_agent_models is not None
+            or local_test_wiring.performance_requirements is not None
+        ):
+            base = (
+                deepcopy(self._canonical_manifest)
+                if isinstance(self._canonical_manifest, dict)
+                else {}
+            )
+            if local_test_wiring.allowed_agent_models is not None:
+                base["allowed_agent_models"] = deepcopy(
+                    local_test_wiring.allowed_agent_models
+                )
+            if local_test_wiring.performance_requirements is not None:
+                base["performance_requirements"] = [
+                    req.model_dump(mode="json")
+                    if hasattr(req, "model_dump")
+                    else deepcopy(req)
+                    for req in local_test_wiring.performance_requirements
+                ]
+            self._canonical_manifest = base
 
     def _resolve_path(self, path: str) -> Path:
-        """Resolve a path relative to the sandbox root, blocking escapes."""
-        resolved = (self.sandbox_root / path).resolve()
+        """Resolve a path relative to the sandbox root, blocking escapes and symlinks."""
+        candidate = self.sandbox_root / path
+        current = candidate
+        while current != self.sandbox_root:
+            if current.is_symlink():
+                raise SandboxToolError(f"Symlink paths are not allowed: {path!r}")
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+        resolved = candidate.resolve()
         if not resolved.is_relative_to(self.sandbox_root):
             raise SandboxToolError(
                 f"Path escapes sandbox: {path!r} resolves to {resolved}"
@@ -197,20 +244,24 @@ class LocalTestService:
         if resolved.is_file():
             return [resolved]
         if resolved.is_dir():
-            return sorted(resolved.glob("*.json"))
+            return sorted(p for p in resolved.glob("*.json") if not p.is_symlink())
         raise SandboxToolError(f"Scenario path not found: {task_path}")
 
     def _load_developer_manifest(self) -> dict:
-        """Load the developer-facing deployment manifest from the kit."""
-        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        """Return the host-frozen canonical deployment manifest."""
+        if self._canonical_manifest is not None:
+            return deepcopy(self._canonical_manifest)
+        manifest_path = self._resolve_path("framework/deployment_manifest.json")
         if not manifest_path.is_file():
             raise SandboxToolError(
                 "framework/deployment_manifest.json not found in sandbox root"
             )
         try:
-            return json.loads(manifest_path.read_text())
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             raise SandboxToolError(f"Invalid {manifest_path.name}: {e}") from e
+        self._canonical_manifest = deepcopy(loaded)
+        return deepcopy(loaded)
 
     def _resolve_local_test_wiring(self) -> LocalTestWiring:
         """Return the trusted runtime wiring supplied by the harness."""

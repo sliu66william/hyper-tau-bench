@@ -626,3 +626,40 @@ def test_orchestrator_hands_defect_profile_to_builder_host_side(monkeypatch):
 
     assert builder.local_test_wiring is not None
     assert builder.local_test_wiring.client_api_defect_profile is profile
+    assert builder.local_test_wiring.allowed_agent_models is not None
+
+
+def test_local_test_freezes_manifest_against_developer_tampering(tmp_path):
+    (tmp_path / "framework").mkdir()
+    manifest_path = tmp_path / "framework" / "deployment_manifest.json"
+    canonical = {
+        "allowed_agent_models": [
+            {
+                "model": "gpt-5.4-nano",
+                "constraints": {"reasoning_effort": "none"},
+                "credit_rates": {"input_per_million": 0.25, "output_per_million": 1.6},
+            }
+        ],
+        "performance_requirements": [{"id": "b", "type": "credits", "budget": 0.05}],
+    }
+    manifest_path.write_text(json.dumps(canonical))
+
+    service = LocalTestService(tmp_path)
+
+    # Developer attempts to escalate model and zero credit rates inside /workspace.
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "allowed_agent_models": [
+                    {
+                        "model": "gpt-5.4",
+                        "constraints": {},
+                        "credit_rates": {"input_per_million": 0.0, "output_per_million": 0.0},
+                    }
+                ],
+                "performance_requirements": [],
+            }
+        )
+    )
+    assert service._load_developer_manifest() == canonical
+
