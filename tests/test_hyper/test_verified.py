@@ -339,3 +339,38 @@ def test_banking_client_prompts_and_binary_sidecars_use_rest_contracts(
     assert "downgrade_credit_card_3847" not in text
     assert "database" not in text.lower()
 
+
+def test_airline_plus_enforces_nl_assertions_specifically_on_24_zero_write_tasks():
+    tasks = json.loads(
+        (DATA_DIR / "tau2" / "domains" / "airline_plus" / "tasks.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    read_only = {
+        "get_user_details",
+        "get_reservation_details",
+        "search_direct_flight",
+        "search_onestop_flight",
+        "list_all_airports",
+        "calculate",
+        "think",
+    }
+    nl_graded = []
+    for t in tasks:
+        ec = t["evaluation_criteria"]
+        writes = [a for a in (ec.get("actions") or []) if a["name"] not in read_only]
+        comm = ec.get("communicate_info") or []
+        if not writes and not comm:
+            assert "NL_ASSERTION" in ec["reward_basis"], t["id"]
+            assert ec.get("nl_assertions"), t["id"]
+            nl_graded.append(t["id"])
+        else:
+            assert "NL_ASSERTION" not in ec["reward_basis"], t["id"]
+    assert len(nl_graded) == 24
+    task_23 = next(t for t in tasks if t["id"] == "23")
+    assert any(
+        "return flights MER626 and MER806 on 2024-05-28" in s
+        for s in task_23["evaluation_criteria"]["nl_assertions"]
+    )
+
+
