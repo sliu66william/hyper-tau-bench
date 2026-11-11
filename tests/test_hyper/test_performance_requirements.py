@@ -973,3 +973,65 @@ def test_every_registry_model_bills_at_its_home_bucket_rate():
     assert set(registry) == set(MODEL_BUCKETS)
     for model, credit_rates in registry.items():
         assert credit_rates == _bucket_rates(MODEL_BUCKETS[model]), model
+
+
+def test_zero_credit_failed_bailouts_do_not_dilute_over_budget_runs():
+    req = [CreditPerformanceRequirement(id="budget", budget=0.05)]
+    honest = evaluate_performance_requirements(
+        req,
+        [],
+        [{"total_credits": 0.10}] * 10,
+        task_rewards=[1.0] * 4 + [0.0] * 6,
+    )
+    bailout = evaluate_performance_requirements(
+        req,
+        [],
+        [{"total_credits": 0.10}] * 4 + [{"total_credits": 0.0}] * 6,
+        task_rewards=[1.0] * 4 + [0.0] * 6,
+    )
+    assert bailout["penalty"] == pytest.approx(honest["penalty"])
+    assert bailout["penalty"] == pytest.approx(1.0)
+
+
+def test_tier_scoped_budget_does_not_treat_other_tier_usage_as_bailout():
+    requirements = [
+        CreditPerformanceRequirement(
+            id="easy_budget", budget=1.0, tier="easy", models=["sol"]
+        ),
+        CreditPerformanceRequirement(
+            id="medium_budget", budget=0.1, tier="medium", models=["luna"]
+        ),
+    ]
+    usages = [
+        {
+            "total_credits": 1.7,
+            "by_model": {"sol": {"credits": 1.5}, "luna": {"credits": 0.2}},
+        },
+        {"total_credits": 0.9, "by_model": {"sol": {"credits": 0.9}}},
+    ]
+    result = evaluate_performance_requirements(
+        requirements, [], usages, task_rewards=[1.0, 0.0]
+    )
+    assert result["penalty"] == pytest.approx(0.2)
+    assert result["requirements"][1]["mean_credits"] == pytest.approx(0.1)
+    assert result["credit_summary"]["mean_credits"] == pytest.approx(1.3)
+
+
+def test_pareto_router_with_cheap_tier_failures_is_never_misclassified_as_bailout():
+    """Paper §3.2 explicitly encourages routing routine traffic to cheap models
+    (e.g. gpt-5.4-nano at ~0.01 credits, <5% of budget) and escalating hard
+    traffic to frontier models (>budget). Failed cheap-tier conversations have
+    positive conversation-wide credits and must stay in the mean denominator."""
+    req = [CreditPerformanceRequirement(id="b", budget=0.30)]
+    usages = (
+        [{"total_credits": 0.01}] * 80  # 15 pass, 65 fail on gpt-5.4-nano
+        + [{"total_credits": 0.80}] * 20  # 10 pass, 10 fail on claude-opus-5
+    )
+    rewards = [1.0] * 15 + [0.0] * 65 + [1.0] * 10 + [0.0] * 10
+    result = evaluate_performance_requirements(req, [], usages, task_rewards=rewards)
+    # True set-wide mean = (80 * 0.01 + 20 * 0.80) / 100 = 0.168 <= 0.30
+    assert result["requirements"][0]["mean_credits"] == pytest.approx(0.168)
+    assert result["penalty"] == 0.0
+    assert result["requirements_met"] is True
+
+

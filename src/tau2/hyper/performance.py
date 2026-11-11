@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from statistics import mean
 from typing import Any, Optional
 
@@ -115,6 +115,7 @@ def evaluate_performance_requirements(
     requirements: list[PerformanceRequirement],
     messages: Iterable[Message],
     credit_usages: Iterable[Optional[Mapping[str, Any]]] = (),
+    task_rewards: Optional[Sequence[float]] = None,
 ) -> dict:
     """Evaluate hard latency gates and soft set-wide mean credit budgets.
 
@@ -122,7 +123,15 @@ def evaluate_performance_requirements(
     incurred on those models (its tier's pool); requirements without a scope
     meter every credit. Overages from multiple credit requirements add up —
     tier scopes are disjoint, so each tier's overspend penalizes once.
+
+    When ``task_rewards`` is supplied under ``TAU2_VERIFIED``, failed runs that
+    incurred zero conversation-wide model credits (e.g. intentional 0-call
+    Python bailouts or deliberate exceptions) are excluded from diluting
+    over-budget runs. Conversations that genuinely ran on a cheaper model tier
+    have positive conversation-wide credits and are never treated as aborts.
     """
+    from tau2.hyper.verified import verified_enabled
+
     latency_samples = collect_agent_turn_latencies(messages)
     credit_requirements = [
         requirement
@@ -131,6 +140,7 @@ def evaluate_performance_requirements(
     ]
     usages = list(credit_usages) if credit_requirements else []
     credit_samples = collect_conversation_credits(usages) if credit_requirements else []
+    rewards_list = list(task_rewards) if task_rewards is not None else None
     latency_summary = {
         "sample_count": len(latency_samples),
         "p50_seconds": _percentile(latency_samples, 50),
@@ -166,12 +176,31 @@ def evaluate_performance_requirements(
             continue
 
         if requirement.models is None:
+            model_scope = None
             requirement_samples = credit_samples
         else:
-            requirement_samples = collect_conversation_credits(
-                usages, set(requirement.models)
-            )
+            model_scope = set(requirement.models)
+            requirement_samples = collect_conversation_credits(usages, model_scope)
         observed_mean = mean(requirement_samples) if requirement_samples else None
+        if (
+            verified_enabled()
+            and rewards_list is not None
+            and requirement_samples
+            and any(c > requirement.budget for c in requirement_samples)
+        ):
+            non_bailout_samples = []
+            for idx, (usage_item, scoped_val) in enumerate(
+                zip(usages, requirement_samples, strict=False)
+            ):
+                passed_task = idx < len(rewards_list) and rewards_list[idx] >= 1.0
+                total_conv_credits = _conversation_credits(usage_item, None)
+                is_failed_bailout = not passed_task and total_conv_credits == 0.0
+                if not is_failed_bailout:
+                    non_bailout_samples.append(scoped_val)
+            if non_bailout_samples and observed_mean is not None:
+                observed_mean = max(observed_mean, mean(non_bailout_samples))
+                if len(credit_requirements) == 1:
+                    credit_summary["mean_credits"] = observed_mean
         credit_summary["budget"] = requirement.budget
         mean_overage = (
             max(0.0, observed_mean / requirement.budget - 1.0)
