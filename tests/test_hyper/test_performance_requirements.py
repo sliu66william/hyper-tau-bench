@@ -973,3 +973,46 @@ def test_every_registry_model_bills_at_its_home_bucket_rate():
     assert set(registry) == set(MODEL_BUCKETS)
     for model, credit_rates in registry.items():
         assert credit_rates == _bucket_rates(MODEL_BUCKETS[model]), model
+
+
+def test_zero_credit_failed_bailouts_do_not_dilute_over_budget_runs():
+    req = [CreditPerformanceRequirement(id="budget", budget=0.05)]
+    honest = evaluate_performance_requirements(
+        req,
+        [],
+        [{"total_credits": 0.10}] * 10,
+        task_rewards=[1.0] * 4 + [0.0] * 6,
+    )
+    bailout = evaluate_performance_requirements(
+        req,
+        [],
+        [{"total_credits": 0.10}] * 4 + [{"total_credits": 0.0}] * 6,
+        task_rewards=[1.0] * 4 + [0.0] * 6,
+    )
+    assert bailout["penalty"] == pytest.approx(honest["penalty"])
+    assert bailout["penalty"] == pytest.approx(1.0)
+
+
+def test_tier_scoped_budget_does_not_treat_other_tier_usage_as_bailout():
+    requirements = [
+        CreditPerformanceRequirement(
+            id="easy_budget", budget=1.0, tier="easy", models=["sol"]
+        ),
+        CreditPerformanceRequirement(
+            id="medium_budget", budget=0.1, tier="medium", models=["luna"]
+        ),
+    ]
+    usages = [
+        {
+            "total_credits": 1.7,
+            "by_model": {"sol": {"credits": 1.5}, "luna": {"credits": 0.2}},
+        },
+        {"total_credits": 0.9, "by_model": {"sol": {"credits": 0.9}}},
+    ]
+    result = evaluate_performance_requirements(
+        requirements, [], usages, task_rewards=[1.0, 0.0]
+    )
+    assert result["penalty"] == pytest.approx(0.2)
+    assert result["requirements"][1]["mean_credits"] == pytest.approx(0.1)
+    assert result["credit_summary"]["mean_credits"] == pytest.approx(1.3)
+

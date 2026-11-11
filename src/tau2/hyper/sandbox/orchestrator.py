@@ -948,6 +948,7 @@ class SandboxOrchestrator:
             self.task.performance_requirements,
             [message for result in final_results for message in result.messages],
             [result.agent_credit_usage for result in final_results],
+            task_rewards=[result.reward for result in final_results],
         )
         performance_reward = performance_details["reward"]
         performance_penalty = performance_details["penalty"]
