@@ -31,3 +31,10 @@ tools together). Local tests stop at 100 steps.
 The agent runs without network access and with a read-only workspace. Each
 request to the agent may take at most 300 seconds, 32 model calls and 256
 Client API calls; a request that exceeds a limit fails.
+
+### Conversation transfers
+
+The conversation transfer endpoint accepts only a `summary` string. When the
+domain's operating materials define structured transfer reason codes, include
+the selected reason code verbatim in `summary`.
+

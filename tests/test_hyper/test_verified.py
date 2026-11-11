@@ -253,6 +253,7 @@ def test_contract_names_the_runtime_facts():
         "300 seconds",
         "32 model calls",
         "256",
+        "selected reason code verbatim",
     ):
         assert fact in text
 
