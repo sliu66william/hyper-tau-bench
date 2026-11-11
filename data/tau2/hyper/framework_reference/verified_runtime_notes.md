@@ -24,10 +24,17 @@ holding one `ToolMessage` per call. Handle both.
 
 A conversation ends with a score of 0 when its tools have returned five errors,
 or when it reaches 200 steps (messages from the agent, the customer and the
-tools together). Local tests stop at 100 steps.
+tools together). Local tests default to 100 steps (configurable up to 200).
 
 ### Sealed runtime
 
 The agent runs without network access and with a read-only workspace. Each
 request to the agent may take at most 300 seconds, 32 model calls and 256
 Client API calls; a request that exceeds a limit fails.
+
+### Conversation transfers
+
+The conversation transfer endpoint accepts only a `summary` string. When the
+domain's operating materials define structured transfer reason codes, include
+the selected reason code verbatim in `summary`.
+

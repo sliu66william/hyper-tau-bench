@@ -168,6 +168,7 @@ def test_contract_names_the_runtime_facts():
         "300 seconds",
         "32 model calls",
         "256",
+        "selected reason code verbatim",
     ):
         assert fact in text
 
@@ -182,3 +183,34 @@ def test_contract_lists_exactly_the_sealed_runner_arguments():
     accepted = section.split("own constraints:", 1)[1].split("Any other argument", 1)[0]
     listed = set(accepted.split("`")[1::2])
     assert listed == set(_SAFE_CANDIDATE_MODEL_KWARGS)
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected_reason"),
+    [
+        ("Transferring: reason: other (outside standard card flow)", "other"),
+        ('{"reason": "other", "notes": "edge case"}', "other"),
+        ("Transfer reason code: other", "other"),
+        ("Escalating with transfer_reason=other", "other"),
+        ("Customer has some other question about rates", None),
+        (
+            "Ruled out fraud_or_security_concern and complex_billing_dispute; "
+            "escalating under account_ownership_dispute.",
+            "account_ownership_dispute",
+        ),
+    ],
+)
+def test_with_summary_reason_handles_explicit_other_json_and_exclusions(
+    summary, expected_reason
+):
+    from tau2.data_model.message import ToolCall
+    from tau2.evaluator.evaluator_action import _with_summary_reason
+
+    call = ToolCall(
+        id="t1",
+        name="transfer_to_human_agents",
+        arguments={"summary": summary},
+    )
+    updated = _with_summary_reason(call)
+    assert updated.arguments.get("reason") == expected_reason
+

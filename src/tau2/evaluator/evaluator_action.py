@@ -32,23 +32,53 @@ def _reason_from_summary(gold_action: Action) -> bool:
     return verified_enabled()
 
 
+_EXPLICIT_REASON_TAG_RE = re.compile(
+    r"(?:^|[^a-z0-9])(?:transfer[_ ])?reason(?:[_ ]code)?[`'\"]?\s*[:=]\s*[`'\"\[]?([a-z0-9_]+)(?![a-z0-9_])",
+    re.IGNORECASE,
+)
+_RULED_OUT_CODE_RE = re.compile(
+    r"\b(?:ruled\s+out|not|excluding|rather\s+than)\s+[`'\"\[]?[a-z0-9_]+[`'\"\]]?"
+    r"(?:\s*(?:,|or|and)\s*[`'\"\[]?[a-z0-9_]+[`'\"\]]?)*",
+    re.IGNORECASE,
+)
+
+
 def _with_summary_reason(tool_call: ToolCall) -> ToolCall:
     """Fill a transfer's missing `reason` with the one reason code in its summary.
 
     No code, or several distinct codes, leave the call without a reason, so
-    listing every code cannot match. `other` is not searched for, because it
-    is also an ordinary word.
+    listing every code cannot match. Plain-prose `other` is ignored unless
+    explicitly tagged (`reason: other` / `{"reason": "other"}` /
+    `transfer_reason=other`), and codes explicitly marked `ruled out` /
+    `not <code>` do not count as competing selections.
     """
     if tool_call.name != TRANSFER_TOOL or "reason" in tool_call.arguments:
         return tool_call
     from tau2.domains.banking_knowledge.tools import TransferReasonLiteral
 
-    summary = str(tool_call.arguments.get("summary", ""))
-    codes = [code for code in get_args(TransferReasonLiteral) if code != "other"]
+    raw_summary = str(tool_call.arguments.get("summary", ""))
+    cleaned_summary = _RULED_OUT_CODE_RE.sub("", raw_summary)
+    all_codes = set(get_args(TransferReasonLiteral))
+    codes = [code for code in all_codes if code != "other"]
+
+    explicit_tags = {
+        m.group(1).lower()
+        for m in _EXPLICIT_REASON_TAG_RE.finditer(cleaned_summary)
+        if m.group(1).lower() in all_codes
+    }
+    if len(explicit_tags) == 1:
+        return tool_call.model_copy(
+            update={"arguments": {**tool_call.arguments, "reason": next(iter(explicit_tags))}}
+        )
+    if len(explicit_tags) > 1:
+        return tool_call
+
     found = {
         code
         for code in codes
-        if re.search(rf"(?<![a-z0-9_]){code}(?![a-z0-9_])", summary, re.IGNORECASE)
+        if re.search(
+            rf"(?<![a-z0-9_]){code}(?![a-z0-9_])", cleaned_summary, re.IGNORECASE
+        )
     }
     if len(found) != 1:
         return tool_call
