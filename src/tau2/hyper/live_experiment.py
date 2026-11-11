@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import threading
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
@@ -82,21 +84,38 @@ class LiveExperimentContext:
         if self._workspace_root is None:
             return None
         try:
-            simulations_dir = self._workspace_root / "simulations"
+            workspace_root = self._workspace_root.resolve()
+            if self._workspace_root.is_symlink():
+                raise OSError(errno.ELOOP, "Workspace root is a symlink")
+            simulations_dir = workspace_root / "simulations"
+            if simulations_dir.is_symlink():
+                raise OSError(errno.ELOOP, "simulations directory is a symlink")
             simulations_dir.mkdir(parents=True, exist_ok=True)
+            if not simulations_dir.resolve().is_relative_to(workspace_root):
+                raise OSError(errno.ELOOP, "simulations directory escapes workspace")
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             candidate = simulations_dir / f"live_experiment_{timestamp}.json"
             suffix = 1
-            while candidate.exists():
+            while candidate.exists() or candidate.is_symlink():
                 candidate = (
                     simulations_dir / f"live_experiment_{timestamp}_{suffix}.json"
                 )
                 suffix += 1
-            candidate.write_text(report)
+            flags = (
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0)
+            )
+            fd = os.open(candidate, flags, 0o644)
+            try:
+                os.write(fd, report.encode("utf-8"))
+            finally:
+                os.close(fd)
         except OSError as error:
             logger.warning(f"Could not persist the live-experiment report: {error}")
             return None
-        relative = candidate.relative_to(self._workspace_root).as_posix()
+        relative = candidate.relative_to(workspace_root).as_posix()
         with self._lock:
             self._report_path = relative
         return relative
