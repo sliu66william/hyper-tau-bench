@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import errno
 import hashlib
 import json
@@ -32,10 +33,16 @@ class LocalTestWiring:
     client_api_mode: Optional[str] = None
     client_api_defect_profile: Optional[Any] = None
     capability_snapshot_provider: Optional[Callable[[], Any]] = None
+    allowed_agent_models: Optional[list[dict[str, Any]]] = None
+    performance_requirements: Optional[list[Any]] = None
 
 
 class SandboxToolError(Exception):
     """Raised when a sandbox tool operation fails."""
+
+
+MAX_SCENARIOS_PER_LOCAL_TEST_CALL = 25
+MAX_TOTAL_LOCAL_TEST_SCENARIOS = 250
 
 
 _REST_PRIVATE_SETUP_ERROR = (
@@ -176,6 +183,8 @@ class LocalTestService:
         docker_cpus: Optional[str] = None,
         response_phrasing_pack: Optional[Any] = None,
         local_test_wiring: Optional[LocalTestWiring] = None,
+        max_scenarios_per_call: int = MAX_SCENARIOS_PER_LOCAL_TEST_CALL,
+        max_total_scenarios: int = MAX_TOTAL_LOCAL_TEST_SCENARIOS,
     ):
         self.sandbox_root = Path(sandbox_root).resolve()
         if not self.sandbox_root.is_dir():
@@ -185,10 +194,57 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
+        self.max_scenarios_per_call = max_scenarios_per_call
+        self.max_total_scenarios = max_total_scenarios
+        self.scenarios_executed = 0
+        self._canonical_manifest: Optional[dict[str, Any]] = None
+        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        if (
+            manifest_path.is_file()
+            and not manifest_path.is_symlink()
+            and not manifest_path.parent.is_symlink()
+        ):
+            try:
+                loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    self._canonical_manifest = loaded
+            except (OSError, json.JSONDecodeError):
+                self._canonical_manifest = None
+
+        if local_test_wiring is not None and (
+            local_test_wiring.allowed_agent_models is not None
+            or local_test_wiring.performance_requirements is not None
+        ):
+            base = (
+                deepcopy(self._canonical_manifest)
+                if isinstance(self._canonical_manifest, dict)
+                else {}
+            )
+            if local_test_wiring.allowed_agent_models is not None:
+                base["allowed_agent_models"] = deepcopy(
+                    local_test_wiring.allowed_agent_models
+                )
+            if local_test_wiring.performance_requirements is not None:
+                base["performance_requirements"] = [
+                    req.model_dump(mode="json")
+                    if hasattr(req, "model_dump")
+                    else deepcopy(req)
+                    for req in local_test_wiring.performance_requirements
+                ]
+            self._canonical_manifest = base
 
     def _resolve_path(self, path: str) -> Path:
-        """Resolve a path relative to the sandbox root, blocking escapes."""
-        resolved = (self.sandbox_root / path).resolve()
+        """Resolve a path relative to the sandbox root, blocking escapes and symlinks."""
+        candidate = self.sandbox_root / path
+        current = candidate
+        while current != self.sandbox_root:
+            if current.is_symlink():
+                raise SandboxToolError(f"Symlink paths are not allowed: {path!r}")
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+        resolved = candidate.resolve()
         if not resolved.is_relative_to(self.sandbox_root):
             raise SandboxToolError(
                 f"Path escapes sandbox: {path!r} resolves to {resolved}"
@@ -201,20 +257,24 @@ class LocalTestService:
         if resolved.is_file():
             return [resolved]
         if resolved.is_dir():
-            return sorted(resolved.glob("*.json"))
+            return sorted(p for p in resolved.glob("*.json") if not p.is_symlink())
         raise SandboxToolError(f"Scenario path not found: {task_path}")
 
     def _load_developer_manifest(self) -> dict:
-        """Load the developer-facing deployment manifest from the kit."""
-        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        """Return the host-frozen canonical deployment manifest."""
+        if self._canonical_manifest is not None:
+            return deepcopy(self._canonical_manifest)
+        manifest_path = self._resolve_path("framework/deployment_manifest.json")
         if not manifest_path.is_file():
             raise SandboxToolError(
                 "framework/deployment_manifest.json not found in sandbox root"
             )
         try:
-            return json.loads(manifest_path.read_text())
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             raise SandboxToolError(f"Invalid {manifest_path.name}: {e}") from e
+        self._canonical_manifest = deepcopy(loaded)
+        return deepcopy(loaded)
 
     def _resolve_local_test_wiring(self) -> LocalTestWiring:
         """Return the trusted runtime wiring supplied by the harness."""
@@ -371,6 +431,25 @@ class LocalTestService:
         if not task_files:
             raise SandboxToolError(f"No .json scenario files found at: {task_path}")
 
+        from tau2.hyper.verified import verified_enabled
+
+        if verified_enabled():
+            if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
+                raise SandboxToolError("max_steps must be a positive integer")
+            max_steps = min(max_steps, 200)
+            if len(task_files) > self.max_scenarios_per_call:
+                raise SandboxToolError(
+                    f"Scenario batch at {task_path!r} contains {len(task_files)} "
+                    f"files, exceeding the per-call limit of "
+                    f"{self.max_scenarios_per_call}"
+                )
+            if self.scenarios_executed + len(task_files) > self.max_total_scenarios:
+                raise SandboxToolError(
+                    f"Local-test scenario quota exhausted "
+                    f"({self.scenarios_executed}/{self.max_total_scenarios} used; "
+                    f"requested {len(task_files)})"
+                )
+
         # Import lazily to avoid a module cycle at import time:
         # builder -> tools -> orchestrator -> builder.
         from tau2.data_model.tasks import Task
@@ -437,6 +516,9 @@ class LocalTestService:
             raise SandboxToolError(
                 f"Could not load the sealed candidate runtime: {error}"
             ) from error
+
+        if verified_enabled():
+            self.scenarios_executed += len(task_files)
 
         results = []
         credit_usages = []

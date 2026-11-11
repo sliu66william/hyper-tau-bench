@@ -788,6 +788,10 @@ class SandboxOrchestrator:
                     if self._capability_session is not None
                     else None
                 ),
+                allowed_agent_models=(
+                    self.allowed_agent_models or self.task.allowed_agent_models
+                ),
+                performance_requirements=self.task.performance_requirements,
             )
 
     def run(
