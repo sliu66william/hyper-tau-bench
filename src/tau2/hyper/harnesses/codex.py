@@ -32,6 +32,16 @@ class CodexSandboxBuilder(NativeSandboxBuilder):
     model_catalog_host_path = os.environ.get("TAU2_CODEX_MODEL_CATALOG")
     model_catalog_path = "/runtime-home/.codex/model_catalog.json"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.harness_version = os.environ.get(
+            "TAU2_CODEX_HARNESS_VERSION", CODEX_HARNESS_VERSION
+        )
+        self.model_gateway_provider = os.environ.get(
+            "TAU2_CODEX_GATEWAY_PROVIDER", "openai"
+        )
+        self.model_catalog_host_path = os.environ.get("TAU2_CODEX_MODEL_CATALOG")
+
     def harness_config_metadata(self) -> dict:
         return {
             "interface": "app-server-stdio",

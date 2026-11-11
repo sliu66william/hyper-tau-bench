@@ -82,7 +82,8 @@ def test_render_provenance_pins_match():
             if not pattern:
                 continue
             current = {
-                str(p.relative_to(TELECOM_ROOT)) for p in TELECOM_ROOT.glob(pattern)
+                p.relative_to(TELECOM_ROOT).as_posix()
+                for p in TELECOM_ROOT.glob(pattern)
             }
             pinned = {rel for rel in group[files_key] if fnmatch.fnmatch(rel, pattern)}
             if current != pinned:
