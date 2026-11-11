@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from loguru import logger
 
 from tau2.hyper.runtime_contract import DEFAULT_CONSTRUCTION_RUNTIME_IMAGE
 
@@ -308,17 +312,43 @@ class LocalTestService:
                 )
         return "\n".join(lines)
 
-    def _new_local_test_artifact_path(self) -> Path:
-        """Create a sandbox-local artifact path for a local simulation run."""
-        simulations_dir = self._resolve_path("simulations")
-        simulations_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        candidate = simulations_dir / f"local_run_{timestamp}.json"
-        suffix = 1
-        while candidate.exists():
-            candidate = simulations_dir / f"local_run_{timestamp}_{suffix}.json"
-            suffix += 1
-        return candidate
+    def _persist_local_test_artifact(self, text: str) -> Optional[Path]:
+        """Atomically create and write a local simulation report under ``simulations/``.
+
+        Allocated and opened with ``O_CREAT | O_EXCL`` (and ``O_NOFOLLOW`` where
+        supported) at write time so dangling symlinks or TOCTOU directory swaps
+        inside the Developer-writable kit cannot overwrite host files.
+        """
+        try:
+            if self.sandbox_root.is_symlink():
+                raise OSError(errno.ELOOP, "Sandbox root is a symlink")
+            simulations_dir = self._resolve_path("simulations")
+            if simulations_dir.is_symlink():
+                raise OSError(errno.ELOOP, "simulations directory is a symlink")
+            simulations_dir.mkdir(exist_ok=True)
+            if not simulations_dir.resolve().is_relative_to(self.sandbox_root):
+                raise OSError(errno.ELOOP, "simulations directory escapes sandbox")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            candidate = simulations_dir / f"local_run_{timestamp}.json"
+            suffix = 1
+            while candidate.exists() or candidate.is_symlink():
+                candidate = simulations_dir / f"local_run_{timestamp}_{suffix}.json"
+                suffix += 1
+            flags = (
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0)
+            )
+            fd = os.open(candidate, flags, 0o644)
+            try:
+                os.write(fd, text.encode("utf-8"))
+            finally:
+                os.close(fd)
+            return candidate
+        except (SandboxToolError, OSError) as exc:
+            logger.warning(f"Could not persist local-test artifact: {exc}")
+            return None
 
     def run_local_test(
         self,
@@ -414,7 +444,6 @@ class LocalTestService:
         mock_dev_env = None
         error_count = 0
         run_started_at = datetime.now(timezone.utc).isoformat()
-        artifact_path = self._new_local_test_artifact_path()
         # The source-domain name is runtime wiring, not Developer-facing
         # information, so neither the tool output nor the sandbox-local run
         # artifact may carry it.
@@ -651,9 +680,12 @@ class LocalTestService:
             "performance": performance,
             "records": records,
         }
-        artifact_path.write_text(json.dumps(artifact_payload, indent=2, default=str))
-        output_blocks.append(
-            f"Saved artifact: {artifact_path.relative_to(self.sandbox_root).as_posix()}"
+        artifact_path = self._persist_local_test_artifact(
+            json.dumps(artifact_payload, indent=2, default=str)
         )
+        if artifact_path is not None:
+            output_blocks.append(
+                f"Saved artifact: {artifact_path.relative_to(self.sandbox_root).as_posix()}"
+            )
 
         return "\n\n".join(output_blocks)

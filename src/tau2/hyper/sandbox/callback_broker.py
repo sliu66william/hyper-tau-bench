@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import secrets
@@ -9,6 +10,8 @@ import tempfile
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
+
+from loguru import logger
 
 from tau2.hyper.sandbox.local_test import LocalTestService
 
@@ -27,10 +30,12 @@ def _write_response_file(path: Path, text: str) -> None:
     anything already exists there. Either way the host writes only a file it
     just created inside the callback directory, never through a planted link.
     """
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    if path.is_symlink() or path.parent.is_symlink():
+        raise OSError(errno.ELOOP, "Refusing to write through symlink", str(path))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
     try:
-        os.write(fd, text.encode())
+        os.write(fd, text.encode("utf-8"))
     finally:
         os.close(fd)
 
@@ -213,9 +218,23 @@ class CallbackBroker:
                 response_path = self.callback_dir / f"response-{request_id}.json"
                 temporary_path = self.callback_dir / f".response-{request_id}.tmp"
                 # The Developer owns this directory and picks request_id, so
-                # the host must not write through a link planted at this path.
-                _write_response_file(temporary_path, json.dumps(response))
-                temporary_path.replace(response_path)
+                # the host must not write through a link planted at this path,
+                # nor allow a planted node to crash the broker loop.
+                try:
+                    if response_path.is_symlink() or response_path.is_dir():
+                        raise OSError(
+                            errno.EEXIST,
+                            "Refusing to overwrite symlink or directory response path",
+                            str(response_path),
+                        )
+                    _write_response_file(temporary_path, json.dumps(response))
+                    temporary_path.replace(response_path)
+                except OSError as exc:
+                    logger.warning(
+                        f"Dropping callback response for {request_id!r} due to unsafe destination: {exc}"
+                    )
+                    if not temporary_path.is_symlink():
+                        temporary_path.unlink(missing_ok=True)
 
     def metadata(self) -> dict:
         """Return callback configuration without its bearer token."""
