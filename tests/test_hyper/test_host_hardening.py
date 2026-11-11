@@ -9,9 +9,12 @@ import pytest
 from tau2.hyper.live_experiment import LiveExperimentContext
 from tau2.hyper.sandbox.callback_broker import CallbackBroker, _write_response_file
 from tau2.hyper.sandbox.orchestrator import (
+    _build_artifact_manifest,
+    _build_contamination_report,
     _classify_workspace_provenance,
     initialize_kit_repository,
 )
+from tau2.hyper.sandbox.sealed_runner import _ensure_kit_world_readable
 
 
 def _symlink_or_skip(link, target, *, target_is_directory: bool = False) -> None:
@@ -105,3 +108,63 @@ def test_host_git_runs_nothing_the_developer_configured(tmp_path, config):
     assert provenance == {"workspace/agent.py": "modified", "workspace/new.py": "new"}
     assert deleted == ["workspace/old.py"]
     assert not sentinel.exists()
+
+
+def test_gitignore_cannot_hide_new_workspace_files_from_contamination_scan(tmp_path):
+    kit = tmp_path / "kit"
+    (kit / "workspace").mkdir(parents=True)
+    (kit / "workspace" / "agent.py").write_text("x = 1\n")
+    baseline = initialize_kit_repository(kit)
+
+    # Developer adds a contaminated file and attempts to hide it via .gitignore.
+    (kit / ".gitignore").write_text("workspace/leak.py\n")
+    (kit / "workspace" / "leak.py").write_text("# leaked data/tau2/domains\n")
+
+    report = _build_contamination_report(kit, "airline_plus", baseline)
+    assert report["status"] == "matches_found"
+    assert {m["path"] for m in report["matches"]} == {"workspace/leak.py"}
+
+
+def test_provenance_survives_deleted_git_directory(tmp_path):
+    import os
+    import shutil
+
+    kit = tmp_path / "kit"
+    (kit / "workspace").mkdir(parents=True)
+    (kit / "workspace" / "agent.py").write_text("x = 1\n")
+    (kit / "workspace" / "tools.py").write_text("y = 1\n")
+    baseline = initialize_kit_repository(kit)
+
+    shutil.rmtree(
+        kit / ".git",
+        onexc=lambda fn, path, _exc: (os.chmod(path, 0o666), fn(path)),
+    )
+    (kit / "workspace" / "agent.py").write_text("x = 2\n")
+    (kit / "workspace" / "new.py").write_text("z = 1\n")
+
+    provenance, deleted = _classify_workspace_provenance(kit, baseline)
+    assert provenance == {
+        "workspace/agent.py": "modified",
+        "workspace/tools.py": "baseline",
+        "workspace/new.py": "new",
+    }
+    assert deleted == []
+
+
+def test_host_walks_skip_symlinks_pointing_outside_kit(tmp_path):
+    kit = tmp_path / "kit"
+    (kit / "workspace").mkdir(parents=True)
+    (kit / "workspace" / "agent.py").write_text("x = 1\n")
+    outside = tmp_path / "secret.py"
+    outside.write_text("# data/tau2/domains secret\n")
+    outside.chmod(0o600)
+
+    baseline = initialize_kit_repository(kit)
+    _symlink_or_skip(kit / "workspace" / "escape.py", outside)
+
+    manifest = _build_artifact_manifest(kit, baseline)
+    assert [entry["path"] for entry in manifest] == ["workspace/agent.py"]
+    report = _build_contamination_report(kit, "airline_plus", baseline)
+    assert report["status"] == "clean"
+    _ensure_kit_world_readable(kit)
+

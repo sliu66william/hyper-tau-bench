@@ -117,10 +117,23 @@ def _ensure_kit_world_readable(kit_path: Path) -> None:
     real uids across bind mounts (Linux, unlike Docker Desktop on macOS)
     it cannot enter a kit rooted in a `mkdtemp` directory (mode 0700).
     Best-effort per path: entries owned by other uids are left as-is.
+    Symlinks and paths resolving outside ``kit_path`` are skipped.
     """
+    resolved_root = Path(kit_path).resolve()
     for path in (kit_path, *kit_path.rglob("*")):
         try:
-            mode = path.stat().st_mode
+            if path.is_symlink():
+                continue
+            resolved_path = path.resolve()
+            if resolved_path != resolved_root and not resolved_path.is_relative_to(
+                resolved_root
+            ):
+                continue
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode) or not (
+                stat.S_ISREG(mode) or stat.S_ISDIR(mode)
+            ):
+                continue
             wanted = 0o005 if stat.S_ISDIR(mode) else 0o004
             if (mode & wanted) != wanted:
                 path.chmod(stat.S_IMODE(mode) | wanted)

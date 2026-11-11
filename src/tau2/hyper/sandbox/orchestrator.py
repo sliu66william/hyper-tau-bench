@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -77,6 +78,54 @@ from tau2.runner.build import load_tasks_from_file
 # In-world neutral: the kit's git identity is Developer-visible (git log),
 # so it must not name the benchmark or harness.
 _KIT_BASELINE_MESSAGE = "Initial import"
+_MAX_CONTAMINATION_SCAN_BYTES = 16 * 1024 * 1024
+_KIT_WORKSPACE_BASELINES: dict[tuple[str, str], dict[str, str]] = {}
+
+
+def _has_symlink_ancestor(path: Path, root: Path) -> bool:
+    """Return whether ``path`` or any ancestor below ``root`` is a symlink."""
+    current = path
+    while current != root:
+        if current.is_symlink():
+            return True
+        parent = current.parent
+        if parent == current:
+            return True
+        current = parent
+    return root.is_symlink()
+
+
+def _safe_regular_kit_files(kit_path: Path, directory: Path) -> list[Path]:
+    """Return regular non-symlink files inside ``directory`` confined to ``kit_path``."""
+    resolved_kit = Path(kit_path).resolve()
+    if kit_path.is_symlink() or not directory.exists() or _has_symlink_ancestor(directory, kit_path):
+        return []
+    safe_files: list[Path] = []
+    for candidate in sorted(directory.rglob("*")):
+        try:
+            if _has_symlink_ancestor(candidate, kit_path):
+                continue
+            st = candidate.lstat()
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            if not candidate.resolve().is_relative_to(resolved_kit):
+                continue
+            safe_files.append(candidate)
+        except OSError:
+            continue
+    return safe_files
+
+
+def _snapshot_workspace_hashes(kit_path: Path) -> dict[str, str]:
+    """Record host-side SHA-256 digests of regular files in ``workspace/``."""
+    resolved_kit = Path(kit_path).resolve()
+    hashes: dict[str, str] = {}
+    for path in _safe_regular_kit_files(resolved_kit, resolved_kit / "workspace"):
+        try:
+            hashes[path.relative_to(resolved_kit).as_posix()] = _hash_file(path)
+        except OSError:
+            continue
+    return hashes
 
 
 # The Developer is root in a read-write mount of the whole kit, its `.git`
@@ -159,7 +208,13 @@ def initialize_kit_repository(kit_path: Path) -> str:
         text=True,
         check=True,
     )
-    return result.stdout.strip()
+    commit_sha = result.stdout.strip()
+    while len(_KIT_WORKSPACE_BASELINES) >= 128:
+        _KIT_WORKSPACE_BASELINES.pop(next(iter(_KIT_WORKSPACE_BASELINES)))
+    _KIT_WORKSPACE_BASELINES[(str(kit_path), commit_sha)] = _snapshot_workspace_hashes(
+        kit_path
+    )
+    return commit_sha
 
 
 def _hash_file(path: Path) -> str:
@@ -188,6 +243,11 @@ def _classify_workspace_provenance(
     if baseline_commit is None:
         return None, []
 
+    resolved_kit = Path(kit_path).resolve()
+    baseline_hashes = _KIT_WORKSPACE_BASELINES.get(
+        (str(resolved_kit), baseline_commit)
+    )
+
     with tempfile.TemporaryDirectory(prefix="tau2-host-git-") as scratch:
         git_dir = Path(scratch) / ".git"
         env = _host_git_env(git_dir, kit_path)
@@ -210,26 +270,46 @@ def _classify_workspace_provenance(
             return result.stdout
 
         # The index starts as the baseline tree, so the comparison does not
-        # depend on what the Developer staged either.
+        # depend on what the Developer staged either. Do NOT pass
+        # --exclude-standard to ls-files: a Developer-edited .gitignore must
+        # never hide untracked files as "baseline" in contamination scans.
         if (
             _run_git("init", "--quiet", "--template=", scratch) is None
             or _run_git("read-tree", baseline_commit) is None
         ):
-            return None, []
-        diff_output = _run_git(
-            "diff",
-            "--name-status",
-            "--no-renames",
-            "--ignore-submodules=all",
-            baseline_commit,
-            "--",
-            "workspace",
-        )
-        untracked_output = _run_git(
-            "ls-files", "--others", "--exclude-standard", "--", "workspace"
-        )
+            diff_output = None
+            untracked_output = None
+        else:
+            diff_output = _run_git(
+                "diff",
+                "--name-status",
+                "--no-renames",
+                "--ignore-submodules=all",
+                baseline_commit,
+                "--",
+                "workspace",
+            )
+            untracked_output = _run_git(
+                "ls-files", "--others", "--", "workspace"
+            )
+
     if diff_output is None or untracked_output is None:
-        return None, []
+        if baseline_hashes is None:
+            return None, []
+        current_hashes = _snapshot_workspace_hashes(resolved_kit)
+        provenance_fallback: dict[str, str] = {}
+        deleted_fallback: list[str] = []
+        for rel, digest in current_hashes.items():
+            if rel not in baseline_hashes:
+                provenance_fallback[rel] = "new"
+            elif baseline_hashes[rel] != digest:
+                provenance_fallback[rel] = "modified"
+            else:
+                provenance_fallback[rel] = "baseline"
+        for rel in baseline_hashes:
+            if rel not in current_hashes:
+                deleted_fallback.append(rel)
+        return provenance_fallback, sorted(deleted_fallback)
 
     provenance: dict[str, str] = {}
     deleted: list[str] = []
@@ -248,6 +328,23 @@ def _classify_workspace_provenance(
     for path in untracked_output.splitlines():
         if path.strip():
             provenance[path.strip()] = "new"
+
+    # Cross-check against the host-held baseline snapshot when available so
+    # tampering with kit/.git/objects cannot forge "baseline" provenance.
+    if baseline_hashes is not None:
+        current_hashes = _snapshot_workspace_hashes(resolved_kit)
+        for rel, digest in current_hashes.items():
+            if rel not in baseline_hashes:
+                provenance[rel] = "new"
+            elif baseline_hashes[rel] != digest and provenance.get(rel) not in {
+                "new",
+                "modified",
+            }:
+                provenance[rel] = "modified"
+        for rel in baseline_hashes:
+            if rel not in current_hashes and rel not in deleted:
+                deleted.append(rel)
+
     return provenance, sorted(deleted)
 
 
@@ -262,19 +359,19 @@ def _build_artifact_manifest(
     ``provenance: deleted`` entries.
     """
     workspace = kit_path / "workspace"
-    if not workspace.exists():
+    if not workspace.exists() or _has_symlink_ancestor(workspace, kit_path):
         return []
 
     provenance, deleted = _classify_workspace_provenance(kit_path, baseline_commit)
 
     manifest = []
-    for path in sorted(p for p in workspace.rglob("*") if p.is_file()):
+    for path in _safe_regular_kit_files(kit_path, workspace):
         rel = path.relative_to(kit_path).as_posix()
         try:
-            stat = path.stat()
+            st = path.lstat()
             entry = {
                 "path": rel,
-                "size_bytes": stat.st_size,
+                "size_bytes": st.st_size,
                 "sha256": _hash_file(path),
             }
         except OSError as e:
@@ -305,20 +402,22 @@ def _build_contamination_report(
     patterns = contamination_patterns(domain)
     matches: list[dict] = []
 
-    if not workspace.exists():
+    if not workspace.exists() or _has_symlink_ancestor(workspace, kit_path):
         return {"status": "workspace_missing", "patterns": patterns, "matches": []}
 
     provenance, _ = _classify_workspace_provenance(kit_path, baseline_commit)
     scope = "full" if provenance is None else "delta"
     skipped_baseline_files = 0
 
-    for path in sorted(p for p in workspace.rglob("*") if p.is_file()):
+    for path in _safe_regular_kit_files(kit_path, workspace):
         rel = path.relative_to(kit_path).as_posix()
         if provenance is not None and provenance.get(rel, "baseline") == "baseline":
             skipped_baseline_files += 1
             continue
         try:
-            text = path.read_text(errors="replace")
+            with path.open("rb") as handle:
+                raw = handle.read(_MAX_CONTAMINATION_SCAN_BYTES)
+            text = raw.decode("utf-8", errors="replace")
         except OSError:
             continue
         for line_no, line in enumerate(text.splitlines(), 1):
@@ -696,6 +795,11 @@ class SandboxOrchestrator:
             kit_path,
             allowed_agent_models=self.allowed_agent_models,
         )
+        initial_contract_sha256: Optional[str] = None
+        if self.task.client_api_mode == "rest":
+            contract_path = kit_path / "client_api" / "openapi.yaml"
+            if contract_path.is_file() and not contract_path.is_symlink():
+                initial_contract_sha256 = _hash_file(contract_path)
         kit_baseline_commit = initialize_kit_repository(kit_path)
 
         if self.task.live_experiment_task_ids:
@@ -918,13 +1022,10 @@ class SandboxOrchestrator:
         if self._client_context is not None:
             run_metadata["client"] = self._client_context.result_metadata()
         if self.task.client_api_mode == "rest":
-            contract_path = kit_path / "client_api" / "openapi.yaml"
             run_metadata["client_api"] = {
                 "mode": "rest",
                 "contract_version": CLIENT_API_CONTRACT_VERSION,
-                "contract_sha256": hashlib.sha256(
-                    contract_path.read_bytes()
-                ).hexdigest(),
+                "contract_sha256": initial_contract_sha256,
                 "runtime_contract_version": CONSTRUCTION_RUNTIME_CONTRACT_VERSION,
             }
             if self.task.client_api_deployment_manifest is not None:
