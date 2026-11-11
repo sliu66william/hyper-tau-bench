@@ -162,6 +162,32 @@ def test_rest_semantic_traces_ignore_forged_local_assistant_tool_calls(monkeypat
     assert "customer_demands_after_unavailable_offer_refusal" in rendered_real
 
 
+def test_openings_extractor_strips_filler_and_includes_body_after_short_preamble(
+    monkeypatch,
+):
+    from tau2.evaluator.evaluator_nl_assertions import _assistant_response_openings
+    from tau2.evaluator.evaluator_response_assertions import _normalized_opening_key
+
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    traj = [
+        AssistantMessage(
+            role="assistant",
+            content="Right now, first. I have completed the closure for your EcoCard.",
+        ),
+        AssistantMessage(
+            role="assistant",
+            content="Thank you for waiting today. I have completed the closure for your Gold Card.",
+        ),
+    ]
+    openings = _assistant_response_openings(traj)
+    assert openings[0] == "I have completed the closure for your EcoCard."
+    assert "I have completed the closure for your Gold Card." in openings[1]
+    assert (
+        _normalized_opening_key("Step 1: I have completed the closure.", 3)
+        == "i have completed"
+    )
+
+
 # --- Discoverable-tool audit row ---------------------------------------------
 
 

@@ -58,15 +58,45 @@ Set metExpectation to true only if no repeated opening phrase template appears.
 """
 
 
+_DISCOURSE_FILLER_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"(?:step\s+\d+|turn\s+\d+|#\d+|\[\d+\]|\(\d+\)|\d+[.)])\s*[:,-]?\s*"
+    r"|(?:at\s+this\s+(?:stage|point|time|moment)|"
+    r"for\s+this\s+(?:item|step|request|account|case|card|order|part|turn)|"
+    r"on\s+this\s+(?:account|item|card|order|request|matter)|"
+    r"right\s+now(?:\s*,?\s*first)?|next\s+up(?:\s+here)?|"
+    r"moving\s+(?:on|forward)(?:\s+now)?|to\s+begin\s+with|"
+    r"in\s+this\s+(?:case|situation)|as\s+a\s+next\s+step|"
+    r"first\s+of\s+all|from\s+here(?:\s+on)?|with\s+that\s+(?:checked|done|confirmed))\s*[.,;:-]\s*"
+    r")+",
+    re.IGNORECASE,
+)
+
+
+def strip_discourse_filler_prefix(text: str) -> str:
+    """Strip synthetic numbering and stage-setting prefixes used to game openings."""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if not cleaned:
+        return cleaned
+    stripped = _DISCOURSE_FILLER_PREFIX_RE.sub("", cleaned).strip()
+    return stripped or cleaned
+
+
 def _first_sentence_or_opening(text: str) -> str:
-    text = re.sub(r"\s+", " ", text).strip()
+    from tau2.hyper.verified import verified_enabled
+
+    if verified_enabled():
+        text = strip_discourse_filler_prefix(text)
+    else:
+        text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return text
 
     pieces = re.split(r"(?<=[.!?])\s+", text)
     opening = pieces[0].strip()
     token_count = len(re.findall(r"[A-Za-z0-9']+", opening))
-    if token_count <= 2 and len(pieces) > 1:
+    min_standalone_tokens = 6 if verified_enabled() else 2
+    if token_count <= min_standalone_tokens and len(pieces) > 1:
         opening = f"{opening} {pieces[1].strip()}"
 
     words = opening.split()
