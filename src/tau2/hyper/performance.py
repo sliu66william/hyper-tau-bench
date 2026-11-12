@@ -193,20 +193,35 @@ def evaluate_performance_requirements(
                 zip(usages, requirement_samples, strict=False)
             ):
                 passed_task = idx < len(rewards_list) and rewards_list[idx] >= 1.0
-                total_conv_credits = _conversation_credits(usage_item, None)
+                if usage_item is None:
+                    total_conv_credits = 0.0
+                    calls = 0
+                elif usage_item.get("total_credits") is not None:
+                    total_conv_credits = float(usage_item["total_credits"])
+                    calls = usage_item.get("calls")
+                else:
+                    by_model = usage_item.get("by_model") or {}
+                    total_conv_credits = sum(
+                        float(stats.get("credits", 0.0))
+                        for stats in by_model.values()
+                        if isinstance(stats, Mapping)
+                    )
+                    calls = usage_item.get("calls")
                 is_failed_bailout = not passed_task and (
                     total_conv_credits == 0.0
+                    or total_conv_credits < 0.25 * requirement.budget
                     or (
-                        model_scope is None
-                        and total_conv_credits < 0.05 * requirement.budget
+                        isinstance(calls, int)
+                        and calls <= 1
+                        and total_conv_credits < requirement.budget
                     )
                 )
                 if not is_failed_bailout:
                     non_bailout_samples.append(scoped_val)
             if non_bailout_samples and observed_mean is not None:
                 observed_mean = max(observed_mean, mean(non_bailout_samples))
-                if len(credit_requirements) == 1 and model_scope is None:
-                    credit_summary["mean_credits"] = observed_mean
+        if len(credit_requirements) == 1:
+            credit_summary["mean_credits"] = observed_mean
         credit_summary["budget"] = requirement.budget
         mean_overage = (
             max(0.0, observed_mean / requirement.budget - 1.0)

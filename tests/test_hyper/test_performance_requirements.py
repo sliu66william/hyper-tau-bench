@@ -1016,3 +1016,18 @@ def test_tier_scoped_budget_does_not_treat_other_tier_usage_as_bailout():
     assert result["requirements"][1]["mean_credits"] == pytest.approx(0.1)
     assert result["credit_summary"]["mean_credits"] == pytest.approx(1.3)
 
+
+def test_scoped_budget_blocks_tiny_cross_tier_bailouts_and_syncs_single_summary():
+    req = [CreditPerformanceRequirement(id="pro_budget", budget=0.10, models=["pro"])]
+    usages = [
+        {"calls": 3, "total_credits": 0.20, "by_model": {"pro": {"credits": 0.20}}},
+        {"calls": 1, "total_credits": 0.0001, "by_model": {"nano": {"credits": 0.0001}}},
+    ]
+    result = evaluate_performance_requirements(
+        req, [], usages, task_rewards=[1.0, 0.0]
+    )
+    assert result["penalty"] == pytest.approx(1.0)
+    assert result["credit_summary"]["mean_credits"] == pytest.approx(0.20)
+    assert "over budget by 100.0%" in (format_credit_summary(result["credit_summary"]) or "")
+
+
