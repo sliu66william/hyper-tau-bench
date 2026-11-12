@@ -445,6 +445,9 @@ class LocalTestService:
         from tau2.hyper.verified import verified_enabled
 
         if verified_enabled():
+            if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
+                raise SandboxToolError("max_steps must be a positive integer")
+            max_steps = min(max_steps, 100)
             if len(task_files) > self.max_scenarios_per_call:
                 raise SandboxToolError(
                     f"Scenario batch at {task_path!r} contains {len(task_files)} "
@@ -457,7 +460,6 @@ class LocalTestService:
                     f"({self.scenarios_executed}/{self.max_total_scenarios} used; "
                     f"requested {len(task_files)})"
                 )
-            self.scenarios_executed += len(task_files)
 
         # Import lazily to avoid a module cycle at import time:
         # builder -> tools -> orchestrator -> builder.
@@ -525,6 +527,9 @@ class LocalTestService:
             raise SandboxToolError(
                 f"Could not load the sealed candidate runtime: {error}"
             ) from error
+
+        if verified_enabled():
+            self.scenarios_executed += len(task_files)
 
         results = []
         credit_usages = []

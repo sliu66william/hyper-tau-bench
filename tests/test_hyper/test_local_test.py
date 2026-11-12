@@ -682,3 +682,62 @@ def test_local_test_caps_directory_scenario_batching(tmp_path):
     assert service.scenarios_executed == 0
 
 
+def test_local_test_does_not_burn_scenario_quota_when_candidate_fails_to_load(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "framework").mkdir()
+    (tmp_path / "framework" / "deployment_manifest.json").write_text(
+        json.dumps({"allowed_agent_models": [{"model": "gpt-5.5", "constraints": {}}]})
+    )
+    (tmp_path / "s.json").write_text(
+        json.dumps({"id": "s", "user_scenario": {"instructions": "hi"}})
+    )
+    monkeypatch.setattr(
+        "tau2.hyper.sandbox.sealed_runner.SealedCandidateEnvironment.template",
+        classmethod(lambda cls, cfg: (_ for _ in ()).throw(RuntimeError("syntax error"))),
+    )
+    service = LocalTestService(
+        tmp_path,
+        local_test_wiring=LocalTestWiring(domain="telecom", user_llm="gpt-5.5"),
+        max_total_scenarios=5,
+    )
+    with pytest.raises(SandboxToolError, match="Could not load"):
+        service.run_local_test("s.json")
+    assert service.scenarios_executed == 0
+
+
+def test_callback_broker_validates_and_clamps_max_steps_without_burning_quota(tmp_path):
+    from tau2.hyper.sandbox.callback_broker import CallbackBroker, CallbackBrokerError
+
+    calls = []
+
+    class _Toolkit:
+        def run_local_test(self, task_path, *, verbose=False, max_steps=100):
+            calls.append((task_path, max_steps))
+            return "ok"
+
+    broker = CallbackBroker(tmp_path, toolkit=_Toolkit(), max_local_tests=2)
+    with pytest.raises(CallbackBrokerError):
+        broker.dispatch(
+            token=broker.token,
+            tool="run_local_test",
+            arguments={"task_path": "s.json", "max_steps": "not-an-int"},
+        )
+    with pytest.raises(CallbackBrokerError):
+        broker.dispatch(
+            token=broker.token,
+            tool="run_local_test",
+            arguments={"task_path": "s.json", "max_steps": 0},
+        )
+    assert broker.local_tests_used == 0
+
+    broker.dispatch(
+        token=broker.token,
+        tool="run_local_test",
+        arguments={"task_path": "s.json", "max_steps": 99999},
+    )
+    assert broker.local_tests_used == 1
+    assert calls == [("s.json", 100)]
+
+
+

@@ -129,11 +129,29 @@ class CallbackBroker:
                 task_path = arguments.get("task_path")
                 if not isinstance(task_path, str) or not task_path:
                     raise CallbackBrokerError("run_local_test requires task_path")
+                raw_max_steps = arguments.get("max_steps", 100)
+                if raw_max_steps is None:
+                    raw_max_steps = 100
+                if isinstance(raw_max_steps, bool) or not isinstance(
+                    raw_max_steps, int
+                ):
+                    raise CallbackBrokerError(
+                        "run_local_test max_steps must be an integer"
+                    )
+                if raw_max_steps < 1:
+                    raise CallbackBrokerError(
+                        "run_local_test max_steps must be at least 1"
+                    )
+                from tau2.hyper.verified import verified_enabled
+
+                effective_max_steps = (
+                    min(raw_max_steps, 100) if verified_enabled() else raw_max_steps
+                )
                 self.local_tests_used += 1
                 return self._toolkit.run_local_test(
                     task_path,
                     verbose=bool(arguments.get("verbose", False)),
-                    max_steps=int(arguments.get("max_steps", 100)),
+                    max_steps=effective_max_steps,
                 )
 
             if tool == "talk_to_client":
