@@ -49,24 +49,41 @@ def _reason_from_summary(gold_action: Action) -> bool:
     return verified_enabled()
 
 
+_EXPLICIT_OTHER_REASON_RE = re.compile(
+    r"\breason(?:_code)?\s*[:=]\s*[`'\"\[]?other(?![a-z0-9_])",
+    re.IGNORECASE,
+)
+_RULED_OUT_CODE_RE = re.compile(
+    r"\b(?:ruled\s+out|not|excluding|rather\s+than)\s+[`'\"\[]?[a-z0-9_]+[`'\"\]]?",
+    re.IGNORECASE,
+)
+
+
 def _with_summary_reason(tool_call: ToolCall) -> ToolCall:
     """Fill a transfer's missing `reason` with the one reason code in its summary.
 
     No code, or several distinct codes, leave the call without a reason, so
-    listing every code cannot match. `other` is not searched for, because it
-    is also an ordinary word.
+    listing every code cannot match. Plain-prose `other` is ignored unless
+    explicitly tagged (`reason: other` / `reason_code=other`), and codes
+    explicitly marked `ruled out` / `not <code>` do not count as competing
+    selections.
     """
     if tool_call.name != TRANSFER_TOOL or "reason" in tool_call.arguments:
         return tool_call
     from tau2.domains.banking_knowledge.tools import TransferReasonLiteral
 
-    summary = str(tool_call.arguments.get("summary", ""))
+    raw_summary = str(tool_call.arguments.get("summary", ""))
+    cleaned_summary = _RULED_OUT_CODE_RE.sub("", raw_summary)
     codes = [code for code in get_args(TransferReasonLiteral) if code != "other"]
     found = {
         code
         for code in codes
-        if re.search(rf"(?<![a-z0-9_]){code}(?![a-z0-9_])", summary, re.IGNORECASE)
+        if re.search(
+            rf"(?<![a-z0-9_]){code}(?![a-z0-9_])", cleaned_summary, re.IGNORECASE
+        )
     }
+    if not found and _EXPLICIT_OTHER_REASON_RE.search(cleaned_summary):
+        found = {"other"}
     if len(found) != 1:
         return tool_call
     return tool_call.model_copy(
@@ -325,6 +342,17 @@ class FullDuplexActionEvaluator(EvaluatorBase[Tick]):
         return tool_calls
 
     @classmethod
+    def _extract_verified_semantic_calls(
+        cls, full_trajectory: list[Tick]
+    ) -> list[ToolCall]:
+        tool_calls: list[ToolCall] = []
+        for tick in full_trajectory:
+            tool_calls.extend(tick.user_tool_calls)
+            for result in (*tick.user_tool_results, *tick.agent_tool_results):
+                tool_calls.extend(result.semantic_tool_calls or [])
+        return tool_calls
+
+    @classmethod
     def evaluate_actions(
         cls,
         full_trajectory: list[Tick],
@@ -342,5 +370,27 @@ class FullDuplexActionEvaluator(EvaluatorBase[Tick]):
         if len(golden_actions) == 0:
             return []
 
-        predicted_tool_calls = cls.extract_tool_calls(full_trajectory)
-        return _check_actions(predicted_tool_calls, golden_actions, tool_types)
+        from tau2.hyper.verified import verified_enabled
+
+        has_semantic_trace = verified_enabled() and any(
+            result.semantic_tool_calls is not None
+            for tick in full_trajectory
+            for result in (*tick.user_tool_results, *tick.agent_tool_results)
+        )
+        if not has_semantic_trace:
+            return _check_actions(
+                cls.extract_tool_calls(full_trajectory), golden_actions, tool_types
+            )
+
+        all_calls = cls.extract_tool_calls(full_trajectory)
+        verified_calls = cls._extract_verified_semantic_calls(full_trajectory)
+        canonical_op_names = _canonical_client_api_operation_names()
+        checks: list[ActionCheck] = []
+        for gold_action in golden_actions:
+            pool = (
+                verified_calls
+                if gold_action.name in canonical_op_names
+                else all_calls
+            )
+            checks.extend(_check_actions(pool, [gold_action], tool_types))
+        return checks

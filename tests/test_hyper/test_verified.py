@@ -98,6 +98,38 @@ def test_multiple_transfer_calls_cannot_enumerate_reason_codes(monkeypatch):
     assert not check.action_match
 
 
+def test_transfer_summary_supports_explicit_other_and_ruled_out_contrast(monkeypatch):
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    other_gold = Action(
+        action_id="999_0",
+        requestor="assistant",
+        name="transfer_to_human_agents",
+        arguments={"reason": "other", "summary": ""},
+        compare_args=["reason"],
+    )
+    [matched_other] = _check_actions(
+        [_transfer("reason_code: other — unlisted commercial escrow question")],
+        [other_gold],
+    )
+    assert matched_other.action_match
+    [prose_other] = _check_actions(
+        [_transfer("Customer asked for some other option not in our catalog.")],
+        [other_gold],
+    )
+    assert not prose_other.action_match
+
+    [contrast_check] = _check_actions(
+        [
+            _transfer(
+                "Reason: customer_demands_after_unavailable_offer_refusal "
+                "(ruled out unconfirmed_external_communication)"
+            )
+        ],
+        [_transfer_gold()],
+    )
+    assert contrast_check.action_match
+
+
 def test_rest_semantic_traces_ignore_forged_local_assistant_tool_calls(monkeypatch):
     monkeypatch.setenv(VERIFIED_ENV, "1")
     forged_call = ToolCall(
