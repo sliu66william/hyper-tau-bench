@@ -184,3 +184,41 @@ def test_host_walks_skip_symlinks_pointing_outside_kit(tmp_path):
     assert report["status"] == "clean"
     _ensure_kit_world_readable(kit)
 
+
+def test_provenance_and_manifest_handle_relative_kit_path_and_crlf_baseline(
+    tmp_path, monkeypatch
+):
+    from pathlib import Path
+
+    kit = tmp_path / "rel_kit"
+    (kit / "workspace").mkdir(parents=True)
+    (kit / "workspace" / "agent.py").write_bytes(b"line1\r\nline2\r\n")
+    monkeypatch.chdir(tmp_path)
+
+    rel_kit = Path("rel_kit")
+    baseline = initialize_kit_repository(rel_kit)
+    (rel_kit / "workspace" / "extra.py").write_text("z = 1\n")
+
+    manifest = _build_artifact_manifest(rel_kit, baseline)
+    by_path = {entry["path"]: entry["provenance"] for entry in manifest}
+    assert by_path == {"workspace/agent.py": "baseline", "workspace/extra.py": "new"}
+    report = _build_contamination_report(rel_kit, "airline_plus", baseline)
+    assert report["skipped_baseline_files"] == 1
+
+
+def test_host_git_rejects_objects_info_alternates_and_falls_back_to_snapshot(tmp_path):
+    kit = tmp_path / "kit"
+    (kit / "workspace").mkdir(parents=True)
+    (kit / "workspace" / "agent.py").write_text("x = 1\n")
+    baseline = initialize_kit_repository(kit)
+
+    info_dir = kit / ".git" / "objects" / "info"
+    info_dir.mkdir(parents=True, exist_ok=True)
+    (info_dir / "alternates").write_text("/etc\n")
+    (kit / "workspace" / "agent.py").write_text("x = 2\n")
+
+    provenance, deleted = _classify_workspace_provenance(kit, baseline)
+    assert provenance == {"workspace/agent.py": "modified"}
+    assert deleted == []
+
+

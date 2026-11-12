@@ -82,28 +82,34 @@ _MAX_CONTAMINATION_SCAN_BYTES = 16 * 1024 * 1024
 _KIT_WORKSPACE_BASELINES: dict[tuple[str, str], dict[str, str]] = {}
 
 
-def _has_symlink_ancestor(path: Path, root: Path) -> bool:
-    """Return whether ``path`` or any ancestor below ``root`` is a symlink."""
+def _has_symlink_ancestor(path: Path, resolved_root: Path) -> bool:
+    """Return whether ``path`` or any ancestor below ``resolved_root`` is a symlink."""
     current = path
-    while current != root:
+    while current != resolved_root:
         if current.is_symlink():
             return True
         parent = current.parent
         if parent == current:
             return True
         current = parent
-    return root.is_symlink()
+    return resolved_root.is_symlink()
 
 
-def _safe_regular_kit_files(kit_path: Path, directory: Path) -> list[Path]:
-    """Return regular non-symlink files inside ``directory`` confined to ``kit_path``."""
-    resolved_kit = Path(kit_path).resolve()
-    if kit_path.is_symlink() or not directory.exists() or _has_symlink_ancestor(directory, kit_path):
+def _safe_regular_kit_files(
+    kit_path: Path, rel_dir: str = "workspace"
+) -> list[Path]:
+    """Return regular non-symlink files inside ``kit_path / rel_dir``."""
+    raw_kit = Path(kit_path)
+    if raw_kit.is_symlink():
+        return []
+    resolved_kit = raw_kit.resolve()
+    directory = resolved_kit / rel_dir
+    if not directory.exists() or _has_symlink_ancestor(directory, resolved_kit):
         return []
     safe_files: list[Path] = []
     for candidate in sorted(directory.rglob("*")):
         try:
-            if _has_symlink_ancestor(candidate, kit_path):
+            if _has_symlink_ancestor(candidate, resolved_kit):
                 continue
             st = candidate.lstat()
             if not stat.S_ISREG(st.st_mode):
@@ -116,11 +122,48 @@ def _safe_regular_kit_files(kit_path: Path, directory: Path) -> list[Path]:
     return safe_files
 
 
+def _is_safe_for_host_git(resolved_kit: Path) -> bool:
+    """Verify `.git/objects` and `workspace/` contain no alternates, symlinks, or FIFOs."""
+    git_dir = resolved_kit / ".git"
+    objects_dir = git_dir / "objects"
+    if (
+        not git_dir.is_dir()
+        or git_dir.is_symlink()
+        or not objects_dir.is_dir()
+        or objects_dir.is_symlink()
+    ):
+        return False
+    info_dir = objects_dir / "info"
+    alternates = info_dir / "alternates"
+    if info_dir.is_symlink() or alternates.exists() or alternates.is_symlink():
+        return False
+    for root in (objects_dir, resolved_kit / "workspace"):
+        if not root.exists():
+            continue
+        if root.is_symlink():
+            return False
+        for node in root.rglob("*"):
+            try:
+                mode = node.lstat().st_mode
+            except OSError:
+                return False
+            if stat.S_ISLNK(mode):
+                if root == objects_dir:
+                    return False
+                continue
+            if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                return False
+    return True
+
+
 def _snapshot_workspace_hashes(kit_path: Path) -> dict[str, str]:
     """Record host-side SHA-256 digests of regular files in ``workspace/``."""
-    resolved_kit = Path(kit_path).resolve()
+    raw_kit = Path(kit_path)
+    if raw_kit.is_symlink():
+        return {}
+    resolved_kit = raw_kit.resolve()
     hashes: dict[str, str] = {}
-    for path in _safe_regular_kit_files(resolved_kit, resolved_kit / "workspace"):
+    for path in _safe_regular_kit_files(resolved_kit, "workspace"):
         try:
             hashes[path.relative_to(resolved_kit).as_posix()] = _hash_file(path)
         except OSError:
@@ -133,12 +176,12 @@ def _snapshot_workspace_hashes(kit_path: Path) -> dict[str, str]:
 # hooks, clean filters, diff drivers). So host git never reads the kit's `.git`
 # config: it works from a git directory of its own and borrows only the kit's
 # objects, which the baseline commit id pins.
-def _host_git_env(git_dir: Path, kit_path: Path) -> dict[str, str]:
+def _host_git_env(git_dir: Path, resolved_kit: Path) -> dict[str, str]:
     """Environment for host git over a Developer-writable kit."""
     env = dict(os.environ)
-    env["GIT_DIR"] = str(git_dir)
-    env["GIT_WORK_TREE"] = str(kit_path)
-    env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(kit_path / ".git" / "objects")
+    env["GIT_DIR"] = str(git_dir.resolve())
+    env["GIT_WORK_TREE"] = str(resolved_kit)
+    env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(resolved_kit / ".git" / "objects")
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     return env
@@ -178,6 +221,7 @@ def initialize_kit_repository(kit_path: Path) -> str:
         ["git", "init", "--initial-branch", "main"],
         ["git", "config", "user.name", "Workspace"],
         ["git", "config", "user.email", "workspace@localhost"],
+        ["git", "config", "core.autocrlf", "false"],
         ["git", "add", "--all"],
         [
             "git",
@@ -240,7 +284,7 @@ def _classify_workspace_provenance(
     starting code from the Developer's delta. Returns ``(None, [])`` when git
     provenance is unavailable (no baseline commit, or git failed).
     """
-    if baseline_commit is None:
+    if baseline_commit is None or Path(kit_path).is_symlink():
         return None, []
 
     resolved_kit = Path(kit_path).resolve()
@@ -248,50 +292,55 @@ def _classify_workspace_provenance(
         (str(resolved_kit), baseline_commit)
     )
 
-    with tempfile.TemporaryDirectory(prefix="tau2-host-git-") as scratch:
-        git_dir = Path(scratch) / ".git"
-        env = _host_git_env(git_dir, kit_path)
+    diff_output = None
+    untracked_output = None
+    if _is_safe_for_host_git(resolved_kit):
+        with tempfile.TemporaryDirectory(prefix="tau2-host-git-") as scratch:
+            git_dir = Path(scratch) / ".git"
+            env = _host_git_env(git_dir, resolved_kit)
 
-        def _run_git(*args: str) -> Optional[str]:
-            result = subprocess.run(
-                ["git", *args],
-                cwd=kit_path,
-                capture_output=True,
-                text=True,
-                check=False,
-                env=env,
-            )
-            if result.returncode != 0:
-                logger.warning(
-                    f"Workspace provenance git call failed ({args[0]}): "
-                    f"{result.stderr.strip() or result.stdout.strip()}"
+            def _run_git(*args: str) -> Optional[str]:
+                try:
+                    result = subprocess.run(
+                        ["git", "-c", "core.autocrlf=false", *args],
+                        cwd=resolved_kit,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        check=False,
+                        env=env,
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Workspace provenance git call timed out ({args[0]})")
+                    return None
+                if result.returncode != 0:
+                    logger.warning(
+                        f"Workspace provenance git call failed ({args[0]}): "
+                        f"{result.stderr.strip() or result.stdout.strip()}"
+                    )
+                    return None
+                return result.stdout
+
+            # The index starts as the baseline tree, so the comparison does not
+            # depend on what the Developer staged either. Do NOT pass
+            # --exclude-standard to ls-files: a Developer-edited .gitignore must
+            # never hide untracked files as "baseline" in contamination scans.
+            if (
+                _run_git("init", "--quiet", "--template=", scratch) is not None
+                and _run_git("read-tree", baseline_commit) is not None
+            ):
+                diff_output = _run_git(
+                    "diff",
+                    "--name-status",
+                    "--no-renames",
+                    "--ignore-submodules=all",
+                    baseline_commit,
+                    "--",
+                    "workspace",
                 )
-                return None
-            return result.stdout
-
-        # The index starts as the baseline tree, so the comparison does not
-        # depend on what the Developer staged either. Do NOT pass
-        # --exclude-standard to ls-files: a Developer-edited .gitignore must
-        # never hide untracked files as "baseline" in contamination scans.
-        if (
-            _run_git("init", "--quiet", "--template=", scratch) is None
-            or _run_git("read-tree", baseline_commit) is None
-        ):
-            diff_output = None
-            untracked_output = None
-        else:
-            diff_output = _run_git(
-                "diff",
-                "--name-status",
-                "--no-renames",
-                "--ignore-submodules=all",
-                baseline_commit,
-                "--",
-                "workspace",
-            )
-            untracked_output = _run_git(
-                "ls-files", "--others", "--", "workspace"
-            )
+                untracked_output = _run_git(
+                    "ls-files", "--others", "--", "workspace"
+                )
 
     if diff_output is None or untracked_output is None:
         if baseline_hashes is None:
@@ -358,15 +407,18 @@ def _build_artifact_manifest(
     and baseline files the Developer deleted appear as explicit
     ``provenance: deleted`` entries.
     """
-    workspace = kit_path / "workspace"
-    if not workspace.exists() or _has_symlink_ancestor(workspace, kit_path):
+    if Path(kit_path).is_symlink():
+        return []
+    resolved_kit = Path(kit_path).resolve()
+    workspace = resolved_kit / "workspace"
+    if not workspace.exists() or _has_symlink_ancestor(workspace, resolved_kit):
         return []
 
-    provenance, deleted = _classify_workspace_provenance(kit_path, baseline_commit)
+    provenance, deleted = _classify_workspace_provenance(resolved_kit, baseline_commit)
 
     manifest = []
-    for path in _safe_regular_kit_files(kit_path, workspace):
-        rel = path.relative_to(kit_path).as_posix()
+    for path in _safe_regular_kit_files(resolved_kit, "workspace"):
+        rel = path.relative_to(resolved_kit).as_posix()
         try:
             st = path.lstat()
             entry = {
@@ -395,22 +447,25 @@ def _build_contamination_report(
     kits' baseline files are generated stubs. Without provenance the scan
     falls back to the full workspace.
     """
-    workspace = kit_path / "workspace"
     # Canonical pattern list shared with the authoring-time gate on starting
     # workspaces: baseline files skipped here in delta mode were scanned
     # against the same patterns when the workspace was authored.
     patterns = contamination_patterns(domain)
     matches: list[dict] = []
 
-    if not workspace.exists() or _has_symlink_ancestor(workspace, kit_path):
+    if Path(kit_path).is_symlink():
+        return {"status": "workspace_missing", "patterns": patterns, "matches": []}
+    resolved_kit = Path(kit_path).resolve()
+    workspace = resolved_kit / "workspace"
+    if not workspace.exists() or _has_symlink_ancestor(workspace, resolved_kit):
         return {"status": "workspace_missing", "patterns": patterns, "matches": []}
 
-    provenance, _ = _classify_workspace_provenance(kit_path, baseline_commit)
+    provenance, _ = _classify_workspace_provenance(resolved_kit, baseline_commit)
     scope = "full" if provenance is None else "delta"
     skipped_baseline_files = 0
 
-    for path in _safe_regular_kit_files(kit_path, workspace):
-        rel = path.relative_to(kit_path).as_posix()
+    for path in _safe_regular_kit_files(resolved_kit, "workspace"):
+        rel = path.relative_to(resolved_kit).as_posix()
         if provenance is not None and provenance.get(rel, "baseline") == "baseline":
             skipped_baseline_files += 1
             continue
@@ -761,13 +816,13 @@ class SandboxOrchestrator:
 
         # Determine kit directory
         if self.kit_dir is not None:
-            kit_path = self.kit_dir
+            kit_path = self.kit_dir.resolve()
         else:
             temp_dir = tempfile.mkdtemp(prefix=f"hypertau_sandbox_{domain}_")
             # mkdtemp creates 0700; the sealed candidate container's
             # unprivileged user must be able to traverse the mounted kit.
             os.chmod(temp_dir, 0o755)
-            kit_path = Path(temp_dir)
+            kit_path = Path(temp_dir).resolve()
             logger.info(f"Using temp kit directory: {kit_path}")
 
         try:
