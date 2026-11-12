@@ -78,6 +78,22 @@ def test_live_experiment_persist_rejects_symlinked_simulations_dir(tmp_path):
     assert list(outside.iterdir()) == []
 
 
+def test_local_test_artifact_persist_rejects_symlinked_simulations_and_dangling_links(
+    tmp_path,
+):
+    from tau2.hyper.sandbox.local_test import LocalTestService
+
+    kit = tmp_path / "kit"
+    kit.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _symlink_or_skip(kit / "simulations", outside, target_is_directory=True)
+
+    service = LocalTestService(kit)
+    assert service._persist_local_test_artifact('{"ok": true}') is None
+    assert list(outside.iterdir()) == []
+
+
 @pytest.mark.parametrize(
     "config",
     [
