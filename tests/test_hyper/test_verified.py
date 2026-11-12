@@ -374,3 +374,13 @@ def test_airline_plus_enforces_nl_assertions_specifically_on_24_zero_write_tasks
     )
 
 
+def test_task_052_seeded_workspace_does_not_leak_client_held_limit_rules():
+    agent_py = (
+        DATA_DIR
+        / "tau2/hyper/workspaces/banking_knowledge/gen_sonnet5_stateless_dsec_medium_001/tree/agent.py"
+    ).read_text(encoding="utf-8")
+    assert "150 percent of the current limit" not in agent_py
+    assert "no overdraft fees in the last 30 days" not in agent_py
+
+
+
