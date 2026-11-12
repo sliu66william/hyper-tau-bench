@@ -78,7 +78,9 @@ class CustomerSearchResult(APIModel):
     name: str
 
 
-class BankingCustomer(APIModel):
+class _LegacyBankingCustomer(APIModel):
+    model_config = APIModel.model_config | {"title": "BankingCustomer"}
+
     customer_id: str
     name: str
     address: str
@@ -86,6 +88,11 @@ class BankingCustomer(APIModel):
     phone_number: str
     date_of_birth: str
     rho_bank_plus_subscription: Optional[bool] = None
+
+
+class BankingCustomer(_LegacyBankingCustomer):
+    model_config = APIModel.model_config | {"title": "BankingCustomer"}
+
     parent_customer_id: Optional[str] = None
 
 
@@ -115,7 +122,9 @@ class CreditCardTransaction(APIModel):
     rewards_earned: str
 
 
-class CreditCardAccount(APIModel):
+class _LegacyCreditCardAccount(APIModel):
+    model_config = APIModel.model_config | {"title": "CreditCardAccount"}
+
     account_id: str
     customer_id: str
     card_type: str
@@ -126,10 +135,17 @@ class CreditCardAccount(APIModel):
     credit_limit: Optional[float] = None
     past_due_amount: Optional[float] = None
     reward_points: str
+
+
+class CreditCardAccount(_LegacyCreditCardAccount):
+    model_config = APIModel.model_config | {"title": "CreditCardAccount"}
+
     card_last_four: Optional[str] = None
 
 
-class BankAccount(APIModel):
+class _LegacyBankAccount(APIModel):
+    model_config = APIModel.model_config | {"title": "BankAccount"}
+
     account_id: str
     customer_id: str
     account_type: str
@@ -138,7 +154,19 @@ class BankAccount(APIModel):
     opened_on: str
     balance: float
     closed_on: Optional[str] = None
+
+
+class BankAccount(_LegacyBankAccount):
+    model_config = APIModel.model_config | {"title": "BankAccount"}
+
     parent_account_id: Optional[str] = None
+
+
+class _LegacyCustomerAccounts(APIModel):
+    model_config = APIModel.model_config | {"title": "CustomerAccounts"}
+
+    bank_accounts: list[Any]
+    credit_card_accounts: list[Any]
 
 
 class CustomerAccounts(APIModel):
@@ -146,7 +174,9 @@ class CustomerAccounts(APIModel):
     credit_card_accounts: list[CreditCardAccount]
 
 
-class BankAccountTransaction(APIModel):
+class _LegacyBankAccountTransaction(APIModel):
+    model_config = APIModel.model_config | {"title": "BankAccountTransaction"}
+
     transaction_id: str
     account_id: str
     transaction_type: str
@@ -154,12 +184,19 @@ class BankAccountTransaction(APIModel):
     description: str
     transaction_date: str
     status: str
+
+
+class BankAccountTransaction(_LegacyBankAccountTransaction):
+    model_config = APIModel.model_config | {"title": "BankAccountTransaction"}
+
     available_amount: Optional[float] = None
     hold_amount: Optional[float] = None
     hold_release_date: Optional[str] = None
 
 
-class DebitCard(APIModel):
+class _LegacyDebitCard(APIModel):
+    model_config = APIModel.model_config | {"title": "DebitCard"}
+
     card_id: str
     account_id: str
     last_four: str
@@ -168,6 +205,11 @@ class DebitCard(APIModel):
     issue_reason: str
     issued_on: str
     card_design: Optional[str] = None
+
+
+class DebitCard(_LegacyDebitCard):
+    model_config = APIModel.model_config | {"title": "DebitCard"}
+
     cardholder_name: Optional[str] = None
     fraud_alert_active: Optional[bool] = None
     alert_source: Optional[str] = None
@@ -226,7 +268,9 @@ class CreditCardDispute(APIModel):
     card_action: str
 
 
-class DebitCardDispute(APIModel):
+class _LegacyDebitCardDispute(APIModel):
+    model_config = APIModel.model_config | {"title": "DebitCardDispute"}
+
     dispute_id: str
     transaction_id: str
     account_id: str
@@ -241,6 +285,11 @@ class DebitCardDispute(APIModel):
     maximum_liability_amount: float
     submitted_on: str
     card_action: str
+
+
+class DebitCardDispute(_LegacyDebitCardDispute):
+    model_config = APIModel.model_config | {"title": "DebitCardDispute"}
+
     expected_resolution_date: Optional[str] = None
 
 
@@ -622,7 +671,9 @@ def _legacy_error(result: Any) -> None:
 
 
 def _customer(record: dict[str, Any]) -> dict[str, Any]:
-    return {
+    from tau2.hyper.verified import verified_enabled
+
+    out = {
         "customer_id": record["user_id"],
         "name": record["name"],
         "address": record["address"],
@@ -630,8 +681,10 @@ def _customer(record: dict[str, Any]) -> dict[str, Any]:
         "phone_number": record["phone_number"],
         "date_of_birth": record["date_of_birth"],
         "rho_bank_plus_subscription": record.get("rho_bank_plus_subscription"),
-        "parent_customer_id": record.get("parent_user_id"),
     }
+    if verified_enabled():
+        out["parent_customer_id"] = record.get("parent_user_id")
+    return out
 
 
 def _referral(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -660,9 +713,11 @@ def _credit_card_transaction(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _credit_card_account(record: dict[str, Any]) -> dict[str, Any]:
+    from tau2.hyper.verified import verified_enabled
+
     status = record.get("status", "ACTIVE")
     standing = record.get("account_status")
-    return {
+    out = {
         "account_id": record["account_id"],
         "customer_id": record["user_id"],
         "card_type": record["card_type"],
@@ -681,15 +736,19 @@ def _credit_card_account(record: dict[str, Any]) -> dict[str, Any]:
             else None
         ),
         "reward_points": record.get("reward_points", "0 points"),
-        "card_last_four": record.get("card_last_4_digits"),
     }
+    if verified_enabled():
+        out["card_last_four"] = record.get("card_last_4_digits")
+    return out
 
 
 def _bank_account(record: dict[str, Any]) -> dict[str, Any]:
+    from tau2.hyper.verified import verified_enabled
+
     account_type = record.get("account_type", record.get("class", ""))
     if account_type == "saving":
         account_type = "savings"
-    return {
+    out = {
         "account_id": record["account_id"],
         "customer_id": record["user_id"],
         "account_type": account_type,
@@ -698,12 +757,16 @@ def _bank_account(record: dict[str, Any]) -> dict[str, Any]:
         "opened_on": record.get("date_opened", ""),
         "balance": _money(record.get("current_holdings", record.get("balance", 0))),
         "closed_on": record.get("date_closed"),
-        "parent_account_id": record.get("parent_account_id"),
     }
+    if verified_enabled():
+        out["parent_account_id"] = record.get("parent_account_id")
+    return out
 
 
 def _bank_transaction(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
-    return {
+    from tau2.hyper.verified import verified_enabled
+
+    out = {
         "transaction_id": record.get("transaction_id", record_id),
         "account_id": record["account_id"],
         "transaction_type": record.get("type", "unknown"),
@@ -711,22 +774,30 @@ def _bank_transaction(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         "description": record.get("description", ""),
         "transaction_date": record.get("date", ""),
         "status": record.get("status", "unknown"),
-        "available_amount": (
-            _money(record["available_amount"])
-            if record.get("available_amount") is not None
-            else None
-        ),
-        "hold_amount": (
-            _money(record["hold_amount"])
-            if record.get("hold_amount") is not None
-            else None
-        ),
-        "hold_release_date": record.get("hold_release_date"),
     }
+    if verified_enabled():
+        out.update(
+            {
+                "available_amount": (
+                    _money(record["available_amount"])
+                    if record.get("available_amount") is not None
+                    else None
+                ),
+                "hold_amount": (
+                    _money(record["hold_amount"])
+                    if record.get("hold_amount") is not None
+                    else None
+                ),
+                "hold_release_date": record.get("hold_release_date"),
+            }
+        )
+    return out
 
 
 def _debit_card(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
-    return {
+    from tau2.hyper.verified import verified_enabled
+
+    base = {
         "card_id": record.get("card_id", record_id),
         "account_id": record["account_id"],
         "last_four": record.get("last_4_digits", record.get("card_number_last_4", "")),
@@ -735,6 +806,11 @@ def _debit_card(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         "issue_reason": record.get("issue_reason", "unknown"),
         "issued_on": record.get("issue_date", record.get("created_date", "")),
         "card_design": record.get("card_design"),
+    }
+    if not verified_enabled():
+        return base
+    return {
+        **base,
         "cardholder_name": record.get("cardholder_name"),
         "fraud_alert_active": record.get("fraud_alert_active"),
         "alert_source": record.get("alert_source"),
@@ -797,8 +873,10 @@ def _credit_card_dispute(record_id: str, record: dict[str, Any]) -> dict[str, An
 
 
 def _debit_card_dispute(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
+    from tau2.hyper.verified import verified_enabled
+
     eligible = bool(record.get("provisional_credit_eligible", False))
-    return {
+    out = {
         "dispute_id": record.get("dispute_id", record_id),
         "transaction_id": record["transaction_id"],
         "account_id": record["account_id"],
@@ -813,10 +891,16 @@ def _debit_card_dispute(record_id: str, record: dict[str, Any]) -> dict[str, Any
         ),
         "provisional_credit_amount": record.get("provisional_credit_amount"),
         "maximum_liability_amount": _money(record.get("customer_max_liability_amount")),
-        "submitted_on": record.get("submitted_at") or record.get("filing_date", ""),
+        "submitted_on": (
+            record.get("submitted_at") or record.get("filing_date", "")
+            if verified_enabled()
+            else record.get("submitted_at", "")
+        ),
         "card_action": record.get("card_action", ""),
-        "expected_resolution_date": record.get("expected_resolution_date"),
     }
+    if verified_enabled():
+        out["expected_resolution_date"] = record.get("expected_resolution_date")
+    return out
 
 
 def _replacement_order(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -845,6 +929,8 @@ def _closure_reason(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _credit_limit_request(record_id: str, record: dict[str, Any]) -> dict[str, Any]:
+    from tau2.hyper.verified import verified_enabled
+
     return {
         "request_id": record.get("request_id", record_id),
         "account_id": record["credit_card_account_id"],
@@ -869,7 +955,11 @@ def _credit_limit_request(record_id: str, record: dict[str, Any]) -> dict[str, A
             else None
         ),
         "denial_reason": record.get("denial_reason"),
-        "submitted_on": record.get("submitted_at") or record.get("submitted_date"),
+        "submitted_on": (
+            record.get("submitted_at") or record.get("submitted_date")
+            if verified_enabled()
+            else record.get("submitted_at")
+        ),
         "decided_on": record.get("decision_date"),
     }
 
@@ -968,15 +1058,24 @@ def _operation(
     transform: Optional[Callable[[dict[str, str], Any, Any], dict[str, Any]]] = None,
     response_type: Any = None,
 ) -> ClientOperation:
+    from tau2.hyper.verified import verified_enabled
+
+    resolved_response_type = response_type
+    if resolved_response_type is None:
+        resolved_response_type = (
+            _RESPONSE_TYPES[tool_name]
+            if verified_enabled()
+            else _LEGACY_RESPONSE_TYPE_OVERRIDES.get(
+                tool_name, _RESPONSE_TYPES[tool_name]
+            )
+        )
     return ClientOperation(
         method=method,
         path=path,
         operation_id=operation_id,
         summary=description,
         description=description,
-        response_type=(
-            response_type if response_type is not None else _RESPONSE_TYPES[tool_name]
-        ),
+        response_type=resolved_response_type,
         body_type=body_type,
         query_type=query_type,
         invoke=_invoke(
@@ -1119,6 +1218,39 @@ _RESPONSE_TYPES: dict[str, Any] = {
     "change_debit_card_pin_6285": DebitCardMutationReceipt,
     "get_debit_cards_by_account_id_7823": list[DebitCard],
     "request_temporary_debit_card_limit_increase_8374": TemporaryLimitIncreaseReceipt,
+}
+
+_LegacyBankingCustomerPublic = create_model(
+    "BankingCustomer", __base__=_LegacyBankingCustomer
+)
+_LegacyCreditCardAccountPublic = create_model(
+    "CreditCardAccount", __base__=_LegacyCreditCardAccount
+)
+_LegacyBankAccountPublic = create_model(
+    "BankAccount", __base__=_LegacyBankAccount
+)
+_LegacyCustomerAccountsPublic = create_model(
+    "CustomerAccounts",
+    __base__=APIModel,
+    bank_accounts=(list[_LegacyBankAccountPublic], ...),
+    credit_card_accounts=(list[_LegacyCreditCardAccountPublic], ...),
+)
+_LegacyBankAccountTransactionPublic = create_model(
+    "BankAccountTransaction", __base__=_LegacyBankAccountTransaction
+)
+_LegacyDebitCardPublic = create_model("DebitCard", __base__=_LegacyDebitCard)
+_LegacyDebitCardDisputePublic = create_model(
+    "DebitCardDispute", __base__=_LegacyDebitCardDispute
+)
+
+_LEGACY_RESPONSE_TYPE_OVERRIDES: dict[str, Any] = {
+    "get_user_information_by_id": _LegacyBankingCustomerPublic,
+    "get_credit_card_accounts_by_user": list[_LegacyCreditCardAccountPublic],
+    "file_debit_card_transaction_dispute_6281": _LegacyDebitCardDisputePublic,
+    "get_debit_dispute_status_7483": list[_LegacyDebitCardDisputePublic],
+    "get_all_user_accounts_by_user_id_3847": _LegacyCustomerAccountsPublic,
+    "get_bank_account_transactions_9173": list[_LegacyBankAccountTransactionPublic],
+    "get_debit_cards_by_account_id_7823": list[_LegacyDebitCardPublic],
 }
 
 

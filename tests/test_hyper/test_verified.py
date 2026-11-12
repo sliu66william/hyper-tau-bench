@@ -442,4 +442,115 @@ def test_task_052_seeded_workspace_does_not_leak_client_held_limit_rules():
     assert "no overdraft fees in the last 30 days" not in agent_py
 
 
+def test_tau2_verified_zero_restores_legacy_schemas_tools_and_task_loaders(monkeypatch):
+    from pydantic import TypeAdapter
+
+    from tau2.data_model.tasks import RewardType
+    from tau2.domains.airline_plus.environment import get_tasks as get_airline_tasks
+    from tau2.domains.banking_knowledge.environment import (
+        get_environment as get_banking_env,
+    )
+    from tau2.domains.retail_plus.environment import get_tasks as get_retail_tasks
+    from tau2.hyper.client_api.catalog import client_operations_for_domain
+    from tau2.hyper.client_api.runtime import build_openapi_contract
+
+    env = get_banking_env(retrieval_variant="no_knowledge")
+
+    monkeypatch.setenv(VERIFIED_ENV, "0")
+    contract_off = build_openapi_contract(env)
+    assert (
+        "card_last_four"
+        not in contract_off["components"]["schemas"]["CreditCardAccount"]["properties"]
+    )
+    cust_props_off = contract_off["paths"]["/v1/customers/{customer_id}"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]["properties"]
+    assert "parent_customer_id" not in cust_props_off
+
+    ops_off = {
+        op.operation_id: op for op in client_operations_for_domain("banking_knowledge")
+    }
+    debit_defs_off = TypeAdapter(
+        ops_off["listCheckingAccountDebitCards"].response_type
+    ).json_schema()["$defs"]
+    assert "cardholder_name" not in debit_defs_off["DebitCard"]["properties"]
+
+    airline_off = {t.id: t for t in get_airline_tasks()}
+    assert (
+        RewardType.NL_ASSERTION not in airline_off["0"].evaluation_criteria.reward_basis
+    )
+    assert len(airline_off["28"].evaluation_criteria.nl_assertions) == 2
+    assert len(airline_off["46"].evaluation_criteria.nl_assertions) == 1
+    assert any(
+        "outbound flights MER848 and MER626" in s
+        for s in airline_off["23"].evaluation_criteria.nl_assertions
+    )
+
+    retail_off = {t.id: t for t in get_retail_tasks()}
+    assert retail_off["26"].evaluation_criteria.nl_assertions is None
+    assert any(
+        a.action_id == "26_7" for a in retail_off["26"].evaluation_criteria.actions
+    )
+
+    cc_account = next(
+        acc
+        for acc in env.tools.db.credit_card_accounts.data.values()
+        if acc.get("account_status", "GOOD_STANDING") == "GOOD_STANDING"
+        and acc.get("status", "ACTIVE") == "ACTIVE"
+    )
+    uid = cc_account["user_id"]
+    aid = cc_account["account_id"]
+    cur_limit = int(
+        float(str(cc_account.get("credit_limit", "$5000")).replace("$", "").replace(",", ""))
+    )
+    env.tools.submit_credit_limit_increase_request_7392(
+        user_id=uid,
+        credit_card_account_id=aid,
+        requested_increase_amount=1000,
+    )
+    env.tools.approve_credit_limit_increase_5847(
+        credit_card_account_id=aid,
+        user_id=uid,
+        new_credit_limit=cur_limit + 1000,
+    )
+    req_off = next(
+        r
+        for r in env.tools.db.credit_limit_increase_requests.data.values()
+        if r.get("credit_card_account_id") == aid and r.get("user_id") == uid
+    )
+    assert req_off["status"] == "PENDING"
+
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    contract_on = build_openapi_contract(env)
+    assert (
+        "card_last_four"
+        in contract_on["components"]["schemas"]["CreditCardAccount"]["properties"]
+    )
+    cust_props_on = contract_on["paths"]["/v1/customers/{customer_id}"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]["properties"]
+    assert "parent_customer_id" in cust_props_on
+    ops_on = {
+        op.operation_id: op for op in client_operations_for_domain("banking_knowledge")
+    }
+    debit_defs_on = TypeAdapter(
+        ops_on["listCheckingAccountDebitCards"].response_type
+    ).json_schema()["$defs"]
+    assert "cardholder_name" in debit_defs_on["DebitCard"]["properties"]
+
+    cc_account["credit_limit"] = f"${cur_limit:.2f}"
+    env.tools.approve_credit_limit_increase_5847(
+        credit_card_account_id=aid,
+        user_id=uid,
+        new_credit_limit=cur_limit + 1000,
+    )
+    req_on = next(
+        r
+        for r in env.tools.db.credit_limit_increase_requests.data.values()
+        if r.get("credit_card_account_id") == aid and r.get("user_id") == uid
+    )
+    assert req_on["status"] == "APPROVED"
+
+
+
 
