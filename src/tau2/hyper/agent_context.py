@@ -188,56 +188,58 @@ def reasoning_off_pin(constraints: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
+def _has_reasoning_or_thinking_constraint(constraints: Mapping[str, Any]) -> bool:
+    """Return whether ``constraints`` restricts reasoning or thinking behavior."""
+    if "reasoning_effort" in constraints or "thinking" in constraints:
+        return True
+    extra_body = constraints.get("extra_body")
+    if isinstance(extra_body, Mapping) and (
+        "thinking" in extra_body or "reasoning" in extra_body
+    ):
+        return True
+    return False
+
+
 def _cross_spelling_reasoning_conflict(
     constraints: Mapping[str, Any], kwargs: Mapping[str, Any]
 ) -> Optional[str]:
-    """Detect cross-key attempts to enable or escalate reasoning on pinned seats."""
+    """Detect cross-key attempts to enable or escalate reasoning on constrained seats."""
     from tau2.hyper.verified import verified_enabled
 
-    if not verified_enabled():
+    if not verified_enabled() or not _has_reasoning_or_thinking_constraint(constraints):
         return None
+
     off_pin = reasoning_off_pin(constraints)
-    if off_pin is not None:
-        if (
-            "reasoning_effort" not in constraints
-            and "reasoning_effort" in kwargs
-            and kwargs["reasoning_effort"] not in (None, "none")
-        ):
+    eb_effort = _pinned_value(constraints, ("extra_body", "reasoning", "effort"))
+
+    if "reasoning_effort" not in constraints and "reasoning_effort" in kwargs:
+        val = kwargs["reasoning_effort"]
+        if off_pin is not None:
+            if val not in (None, "none"):
+                return f"reasoning_effort={val!r} conflicts with pinned {off_pin}"
+        elif eb_effort is not None:
+            allowed_eb = choice_values(eb_effort)
+            if allowed_eb is not None:
+                if val not in allowed_eb:
+                    return (
+                        f"reasoning_effort={val!r} conflicts with "
+                        f"extra_body.reasoning.effort one_of {allowed_eb!r}"
+                    )
+            elif val != eb_effort:
+                return (
+                    f"reasoning_effort={val!r} conflicts with "
+                    f"pinned extra_body.reasoning.effort={eb_effort!r}"
+                )
+        else:
             return (
-                f"reasoning_effort={kwargs['reasoning_effort']!r} conflicts with "
-                f"pinned {off_pin}"
+                f"reasoning_effort={val!r} conflicts with configured thinking constraint"
             )
-        if (
-            "thinking" not in constraints
-            and "thinking" in kwargs
-            and kwargs["thinking"] != {"type": "disabled"}
-        ):
-            return f"thinking={kwargs['thinking']!r} conflicts with pinned {off_pin}"
 
-    pinned_eb_effort = _pinned_value(constraints, ("extra_body", "reasoning", "effort"))
-    if (
-        pinned_eb_effort is not None
-        and choice_values(pinned_eb_effort) is None
-        and "reasoning_effort" not in constraints
-        and "reasoning_effort" in kwargs
-        and kwargs["reasoning_effort"] != pinned_eb_effort
-    ):
-        return (
-            f"reasoning_effort={kwargs['reasoning_effort']!r} conflicts with "
-            f"pinned extra_body.reasoning.effort={pinned_eb_effort!r}"
-        )
+    if "thinking" not in constraints and "thinking" in kwargs:
+        if not (off_pin is not None and kwargs["thinking"] == {"type": "disabled"}):
+            target = f"pinned {off_pin}" if off_pin is not None else "configured reasoning/thinking constraint"
+            return f"thinking={kwargs['thinking']!r} conflicts with {target}"
 
-    pinned_top_effort = _pinned_value(constraints, ("reasoning_effort",))
-    if (
-        (pinned_top_effort is not None and choice_values(pinned_top_effort) is None)
-        or (pinned_eb_effort is not None and choice_values(pinned_eb_effort) is None)
-    ):
-        if (
-            "thinking" not in constraints
-            and "thinking" in kwargs
-            and kwargs["thinking"] != {"type": "disabled"}
-        ):
-            return "thinking override conflicts with pinned reasoning effort"
     return None
 
 
@@ -512,6 +514,20 @@ class ModelGateway:
                     "call must choose one explicitly"
                 )
         request_args.update(kwargs)
+        from tau2.hyper.verified import verified_enabled
+
+        if (
+            verified_enabled()
+            and _has_reasoning_or_thinking_constraint(config.constrained_args)
+            and "extra_body" not in config.constrained_args
+            and isinstance(kwargs.get("extra_body"), Mapping)
+        ):
+            eb_kw = kwargs["extra_body"]
+            if "thinking" in eb_kw or "reasoning" in eb_kw:
+                raise ValueError(
+                    "Model call violates configured constraints: extra_body "
+                    "reasoning/thinking override conflicts with pinned constraint"
+                )
         return request_args
 
     def generate(
