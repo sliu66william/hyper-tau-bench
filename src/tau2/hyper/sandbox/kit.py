@@ -664,7 +664,14 @@ def _copy_sop_variant_materials(
             created_dirs.append(top_dir)
 
     substitutions: list[dict[str, str]] = []
-    binary_texts_by_obj_id: dict[int, str] = {}
+    binary_texts_by_key: dict[tuple[str, str, bool], str] = {}
+
+    def _binary_key(kf: KitFile) -> tuple[str, str, bool]:
+        return (
+            str(kf.artifact_kind or ""),
+            str(kf.source_name or ""),
+            bool(kf.client_substitute),
+        )
 
     def _deliver(
         transformation: SectionTransformation,
@@ -684,7 +691,7 @@ def _copy_sop_variant_materials(
             try:
                 text_rendition = transformation.kit_text(artifact)
                 if text_rendition:
-                    binary_texts_by_obj_id[id(kit_file)] = text_rendition
+                    binary_texts_by_key[_binary_key(kit_file)] = text_rendition
             except Exception:
                 pass
         for companion in kit_file.companions:
@@ -720,10 +727,9 @@ def _copy_sop_variant_materials(
     kit_files = _substitute_client_carriers(kit_files, client_replacements)
     for kit_file in _pool_uploaded_material_names(kit_files):
         _write_kit_file(kit_file)
-        if binary_text_sink is not None and id(kit_file) in binary_texts_by_obj_id:
-            binary_text_sink[kit_file.relative_path] = binary_texts_by_obj_id[
-                id(kit_file)
-            ]
+        bkey = _binary_key(kit_file)
+        if binary_text_sink is not None and bkey in binary_texts_by_key:
+            binary_text_sink[kit_file.relative_path] = binary_texts_by_key[bkey]
         for companion in kit_file.companions:
             _write_kit_file(companion)
 

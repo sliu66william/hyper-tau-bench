@@ -383,9 +383,20 @@ def test_banking_client_prompts_and_binary_sidecars_use_rest_contracts(
     sidecar = tmp_path / "flowchart_03_api_contracts.md"
     assert sidecar.is_file()
     text = sidecar.read_text()
-    assert "POST /v1/credit-card-accounts/{account_id}/downgrades" in text
+    assert "Step 3: call POST /v1/credit-card-accounts/{account_id}/downgrades" in text
     assert "downgrade_credit_card_3847" not in text
     assert "database" not in text.lower()
+
+    # Same-stem PDF beside PNG disambiguates instead of overwriting the PNG sidecar.
+    deck = tmp_path / "flowchart_03.pdf"
+    deck.write_bytes(b"%PDF-1.4\n")
+    write_banking_binary_api_contract_sidecar(
+        deck, "Step 1: call update_transaction_rewards_3847."
+    )
+    pdf_sidecar = tmp_path / "flowchart_03_pdf_api_contracts.md"
+    assert pdf_sidecar.is_file()
+    assert "POST /v1/credit-card-accounts/{account_id}/downgrades" in sidecar.read_text()
+    assert "PATCH /v1/credit-card-transactions/{transaction_id}/rewards" in pdf_sidecar.read_text()
 
 
 def test_airline_plus_enforces_nl_assertions_specifically_on_24_zero_write_tasks():

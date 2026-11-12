@@ -432,18 +432,29 @@ def write_banking_binary_api_contract_sidecar(
     Binary PDFs and PNG flowcharts cannot be rewritten in place without
     re-rendering, so when a delivered binary artifact's text rendition
     references Banking Client API operations, attach a clean REST contract
-    sidecar right beside that artifact in ``uploaded_materials/`` without
-    exposing legacy ``_NNNN`` tool names or modifying ``sop.md``.
+    sidecar (including rewritten step-by-step prose mapping diagram steps to
+    HTTP routes) right beside that artifact in ``uploaded_materials/`` without
+    exposing legacy ``_NNNN`` tool names, clobbering sibling files, or
+    modifying ``sop.md``.
     """
     if not source_text or not binary_path.is_file():
         return ()
-    _, referenced = _replace_operation_references(source_text)
+    rewritten_prose, referenced = _replace_operation_references(source_text)
     if not referenced:
         return ()
-    contracts = "\n\n---\n\n".join(_operation_contract(op) for op in referenced)
+    body = _append_contracts(rewritten_prose.strip(), referenced)
     sidecar = binary_path.with_name(f"{binary_path.stem}_api_contracts.md")
+    if sidecar.exists():
+        ext = binary_path.suffix.lstrip(".").lower() or "bin"
+        sidecar = binary_path.with_name(f"{binary_path.stem}_{ext}_api_contracts.md")
+        idx = 2
+        while sidecar.exists():
+            sidecar = binary_path.with_name(
+                f"{binary_path.stem}_{ext}_{idx}_api_contracts.md"
+            )
+            idx += 1
     sidecar.write_text(
-        f"# Referenced API contracts ({binary_path.name})\n\n{contracts}\n",
+        f"# API companion for `{binary_path.name}`\n\n{body}",
         encoding="utf-8",
     )
     return referenced
