@@ -393,12 +393,12 @@ class NLAssertionsEvaluator(EvaluatorBase[Message]):
             else ""
         )
         # System prompt similar to the TypeScript implementation
-        system_prompt = f"""
+        system_prompt = """
         TASK
         - You will be given a list of expected outcomes and a conversation that was collected during a test case run.
         - The conversation is between an agent and a customer.
         - Your job is to evaluate whether the agent satisfies each of the expected outcomes.
-        - Grade each expected outcome individually.{verified_note}
+        - Grade each expected outcome individually.__VERIFIED_NOTE__
 
         FORMAT
         - Your response should be a JSON object with the following fields:
@@ -416,7 +416,7 @@ class NLAssertionsEvaluator(EvaluatorBase[Message]):
                 }
             ]
         }
-        """
+        """.replace("__VERIFIED_NOTE__", verified_note)
 
         user_prompt = f"""
         conversation:
