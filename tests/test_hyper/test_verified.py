@@ -94,6 +94,36 @@ def test_openings_system_prompt_honors_exemptions_under_verified(monkeypatch):
     assert "HONOR ASSERTION EXEMPTIONS" in _response_openings_system_prompt()
     monkeypatch.setenv(VERIFIED_ENV, "0")
     assert "HONOR ASSERTION EXEMPTIONS" not in _response_openings_system_prompt()
+
+
+def test_banking_debit_card_rest_projection_preserves_diagnostic_fields(monkeypatch):
+    from tau2.hyper.client_api.catalogs.banking import DebitCard, _debit_card
+
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    projected = _debit_card(
+        "dc_101",
+        {
+            "card_id": "dc_101",
+            "account_id": "chk_1",
+            "last_4_digits": "4321",
+            "expiration_date": "09/28",
+            "status": "ACTIVE",
+            "issue_reason": "initial",
+            "issue_date": "2024-01-15",
+            "pin_locked": True,
+            "pin_lock_reason": "consecutive_incorrect_attempts",
+            "fraud_alert_active": True,
+            "velocity_blocked": False,
+            "chip_verification_failures": 3,
+            "daily_purchase_limit": "$2,500.00",
+        },
+    )
+    validated = DebitCard.model_validate(projected)
+    assert validated.pin_locked is True
+    assert validated.fraud_alert_active is True
+    assert validated.velocity_blocked is False
+    assert validated.chip_verification_failures == 3
+    assert validated.daily_purchase_limit == 2500.0
 # --- Discoverable-tool audit row ---------------------------------------------
 
 
