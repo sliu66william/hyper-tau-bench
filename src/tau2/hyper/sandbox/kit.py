@@ -559,6 +559,7 @@ def _copy_sop_variant_materials(
     modality_profile: Optional[ModalityProfile | str] = None,
     client_sections: Optional[list[str]] = None,
     client_has_custom_instructions: bool = False,
+    binary_text_sink: Optional[dict[str, str]] = None,
 ) -> Optional[list[Path]]:
     """Materialize section-transformation artifacts into the construction kit.
 
@@ -663,6 +664,14 @@ def _copy_sop_variant_materials(
             created_dirs.append(top_dir)
 
     substitutions: list[dict[str, str]] = []
+    binary_texts_by_key: dict[tuple[str, str, bool], str] = {}
+
+    def _binary_key(kf: KitFile) -> tuple[str, str, bool]:
+        return (
+            str(kf.artifact_kind or ""),
+            str(kf.source_name or ""),
+            bool(kf.client_substitute),
+        )
 
     def _deliver(
         transformation: SectionTransformation,
@@ -674,6 +683,17 @@ def _copy_sop_variant_materials(
         kit_file.artifact_kind = transformation.representation
         kit_file.client_substitute = client_substitute
         kit_file.source_name = artifact.source_path.name
+        if (
+            binary_text_sink is not None
+            and Path(kit_file.relative_path).suffix.lower()
+            in {".pdf", ".png", ".jpg", ".jpeg", ".xlsx", ".pptx"}
+        ):
+            try:
+                text_rendition = transformation.kit_text(artifact)
+                if text_rendition:
+                    binary_texts_by_key[_binary_key(kit_file)] = text_rendition
+            except Exception:
+                pass
         for companion in kit_file.companions:
             companion.source_name = artifact.source_path.name
         if kit_file.substituted_from:
@@ -707,6 +727,9 @@ def _copy_sop_variant_materials(
     kit_files = _substitute_client_carriers(kit_files, client_replacements)
     for kit_file in _pool_uploaded_material_names(kit_files):
         _write_kit_file(kit_file)
+        bkey = _binary_key(kit_file)
+        if binary_text_sink is not None and bkey in binary_texts_by_key:
+            binary_text_sink[kit_file.relative_path] = binary_texts_by_key[bkey]
         for companion in kit_file.companions:
             _write_kit_file(companion)
 
@@ -1157,6 +1180,7 @@ def build_construction_kit(
 
     # 1. SOP document
     sop_variant_manifest, demoted_sop_file = _write_construction_sop(task, out_dir)
+    binary_artifact_texts: dict[str, str] = {}
     _copy_sop_variant_materials(
         sop_variant_manifest,
         out_dir,
@@ -1166,6 +1190,7 @@ def build_construction_kit(
         client_has_custom_instructions=bool(
             task.client_enabled and task.client_instructions.strip()
         ),
+        binary_text_sink=binary_artifact_texts if domain == "banking_knowledge" else None,
     )
     has_root_sop = demoted_sop_file is None
 
@@ -1212,7 +1237,9 @@ def build_construction_kit(
     if domain == "banking_knowledge":
         from tau2.hyper.client_api.banking_docs import (
             rewrite_banking_client_api_file,
+            write_banking_binary_api_contract_sidecar,
         )
+        from tau2.hyper.verified import verified_enabled
 
         document_roots = [out_dir / "sop.md", out_dir / "knowledge_base"]
         uploaded_materials = out_dir / "uploaded_materials"
@@ -1227,6 +1254,12 @@ def build_construction_kit(
                 before = path.read_bytes()
                 rewrite_banking_client_api_file(path)
                 rewritten_count += path.read_bytes() != before
+        if verified_enabled():
+            for rel_path, raw_text in sorted(binary_artifact_texts.items()):
+                if write_banking_binary_api_contract_sidecar(
+                    out_dir / rel_path, raw_text
+                ):
+                    rewritten_count += 1
         logger.debug(
             f"  Rewrote {rewritten_count} Banking documents as Client API contracts"
         )

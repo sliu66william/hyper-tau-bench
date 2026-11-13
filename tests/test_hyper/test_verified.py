@@ -124,6 +124,64 @@ def test_banking_debit_card_rest_projection_preserves_diagnostic_fields(monkeypa
     assert validated.velocity_blocked is False
     assert validated.chip_verification_failures == 3
     assert validated.daily_purchase_limit == 2500.0
+
+
+def test_banking_client_prompts_and_binary_sidecars_preserve_multimodal_and_xml_boundaries(
+    tmp_path, monkeypatch
+):
+    from tau2.hyper.client_api.banking_docs import (
+        _operation_index,
+        write_banking_binary_api_contract_sidecar,
+    )
+    from tau2.hyper.client_sim.instructions import resolve_task_client_instructions
+    from tau2.hyper.task_loader import load_active_hyper_tau_tasks
+
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    op_index = _operation_index()
+    for task in load_active_hyper_tau_tasks():
+        if task.source_domain == "banking_knowledge" and task.client_sections:
+            prompt = resolve_task_client_instructions(task)
+            leaked = [name for name in op_index if name in prompt]
+            assert not leaked, f"{task.id} leaked legacy names: {leaked}"
+            assert "## Referenced API contracts" not in prompt
+            assert prompt.rstrip().endswith("</opening>")
+
+    diagram = tmp_path / "flowchart_03.png"
+    diagram.write_bytes(b"\x89PNG\r\n\x1a\n")
+    ops = write_banking_binary_api_contract_sidecar(
+        diagram,
+        "ATM-OPS-201 rev C: Step 3 secret decision branch -> call downgrade_credit_card_3847.",
+    )
+    assert ops
+    sidecar = tmp_path / "flowchart_03_api_contracts.md"
+    text = sidecar.read_text(encoding="utf-8")
+    assert "POST /v1/credit-card-accounts/{account_id}/downgrades" in text
+    assert "downgrade_credit_card_3847" not in text
+    assert "secret decision branch" not in text
+    assert "rev C" not in text
+
+    # Already-advertised non-_NNNN operation emits no redundant sidecar
+    plain_png = tmp_path / "plain_transfer.png"
+    plain_png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    assert (
+        write_banking_binary_api_contract_sidecar(
+            plain_png, "Escalate via transfer_to_human_agents."
+        )
+        == ()
+    )
+    assert not (tmp_path / "plain_transfer_api_contracts.md").exists()
+
+    # Same-stem PDF beside PNG disambiguates instead of overwriting
+    deck = tmp_path / "flowchart_03.pdf"
+    deck.write_bytes(b"%PDF-1.4\n")
+    write_banking_binary_api_contract_sidecar(
+        deck, "Step 1: call update_transaction_rewards_3847."
+    )
+    pdf_sidecar = tmp_path / "flowchart_03_pdf_api_contracts.md"
+    assert pdf_sidecar.is_file()
+    assert "PATCH /v1/credit-card-transactions/{transaction_id}/rewards" in pdf_sidecar.read_text(
+        encoding="utf-8"
+    )
 # --- Discoverable-tool audit row ---------------------------------------------
 
 

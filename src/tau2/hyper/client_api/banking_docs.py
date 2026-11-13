@@ -414,6 +414,44 @@ def rewrite_banking_client_api_document(
     return RewrittenDocument(content, ())
 
 
+_CLIENT_FACT_SECTION_RE = re.compile(
+    r"(<(?P<tag>what_only_you_know|records_in_conflict|questions_you_can_settle)>)"
+    r"(?P<body>.*?)"
+    r"(</(?P=tag)>)",
+    re.DOTALL,
+)
+
+
+def rewrite_banking_client_prompt(prompt: str) -> str:
+    """Rewrite legacy Banking tool names inline inside Client fact XML blocks.
+
+    Leaves ``<how_you_behave>`` untouched and never appends contract sections
+    outside ``<questions_you_can_settle>`` so confirmable-only facts remain
+    strictly governed by their XML disclosure rules.
+    """
+
+    op_index = sorted(
+        _operation_index().items(), key=lambda item: len(item[0]), reverse=True
+    )
+
+    def _rewrite_block(match: re.Match[str]) -> str:
+        body = match.group("body")
+        for name, operation in op_index:
+            if name in body:
+                body = body.replace(name, f"{operation.method} {operation.path}")
+        for action_name in sorted(_SELF_SERVICE_ACTIONS, key=len, reverse=True):
+            if action_name in body:
+                body = body.replace(
+                    action_name,
+                    f"POST /v1/customer-self-service-actions (action_name={action_name})",
+                )
+        for wrapper, replacement in _WRAPPER_REPLACEMENTS.items():
+            body = body.replace(wrapper, replacement)
+        return f"{match.group(1)}{body}{match.group(4)}"
+
+    return _CLIENT_FACT_SECTION_RE.sub(_rewrite_block, prompt)
+
+
 def rewrite_banking_client_api_file(path: Path) -> tuple[ClientOperation, ...]:
     """Rewrite a copied kit document in place and return referenced operations."""
 
@@ -422,3 +460,55 @@ def rewrite_banking_client_api_file(path: Path) -> tuple[ClientOperation, ...]:
     if rewritten.content != original:
         path.write_bytes(rewritten.content)
     return rewritten.operations
+
+
+def write_banking_binary_api_contract_sidecar(
+    binary_path: Path, source_text: str | None
+) -> tuple[ClientOperation, ...]:
+    """Write a schema-only REST companion beside a binary diagram when needed.
+
+    Emits ONLY HTTP endpoint contracts (never flowchart prose, branch labels,
+    thresholds, or revision metadata) and ONLY when the binary artifact
+    references an unadvertised KB operation or legacy ``_NNNN`` tool identifier,
+    preserving the multimodal visual reading challenge.
+    """
+    if not source_text or not binary_path.is_file():
+        return ()
+    referenced: list[ClientOperation] = []
+    for name, operation in sorted(
+        _operation_index().items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        if name not in source_text:
+            continue
+        if (not operation.advertised or re.search(r"_\d{4}$", name)) and (
+            operation not in referenced
+        ):
+            referenced.append(operation)
+    self_service = next(
+        operation
+        for operation in operations()
+        if operation.operation_id == "offerCustomerSelfServiceAction"
+    )
+    for action_name in sorted(_SELF_SERVICE_ACTIONS, key=len, reverse=True):
+        if action_name in source_text and self_service not in referenced:
+            referenced.append(self_service)
+    if not referenced:
+        return ()
+
+    contracts = "\n\n---\n\n".join(_operation_contract(op) for op in referenced)
+    sidecar = binary_path.with_name(f"{binary_path.stem}_api_contracts.md")
+    if sidecar.exists():
+        ext = binary_path.suffix.lstrip(".").lower() or "bin"
+        sidecar = binary_path.with_name(f"{binary_path.stem}_{ext}_api_contracts.md")
+        idx = 2
+        while sidecar.exists():
+            sidecar = binary_path.with_name(
+                f"{binary_path.stem}_{ext}_{idx}_api_contracts.md"
+            )
+            idx += 1
+    sidecar.write_text(
+        f"# API companion for `{binary_path.name}`\n\n"
+        f"## Referenced API contracts\n\n{contracts}\n",
+        encoding="utf-8",
+    )
+    return tuple(referenced)
