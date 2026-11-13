@@ -1093,7 +1093,9 @@
         }
       ],
       "communicate_info": [],
-      "nl_assertions": null,
+      "nl_assertions": [
+        "Agent should transfer the user to a human agent after confirming the returns."
+      ],
       "reward_basis": [
         "DB",
         "NL_ASSERTION"
@@ -2602,19 +2604,12 @@
             "payment_method_id": "paypal_2113923"
           },
           "info": null
-        },
-        {
-          "action_id": "26_7",
-          "name": "transfer_to_human_agents",
-          "arguments": {
-            "summary": "The user wants to refund to the amex credit card, but the agent cannot help."
-          },
-          "info": null,
-          "compare_args": []
         }
       ],
       "communicate_info": [],
-      "nl_assertions": null,
+      "nl_assertions": [
+        "Agent should provide the tracking number 467494160377 for the order sent to Texas."
+      ],
       "reward_basis": [
         "DB",
         "NL_ASSERTION"
@@ -3082,7 +3077,9 @@
       "communicate_info": [
         "240349137151"
       ],
-      "nl_assertions": null,
+      "nl_assertions": [
+        "Agent should provide the tracking number 240349137151."
+      ],
       "reward_basis": [
         "DB",
         "NL_ASSERTION"
@@ -3216,7 +3213,9 @@
       "communicate_info": [
         "240349137151"
       ],
-      "nl_assertions": null,
+      "nl_assertions": [
+        "Agent should provide the tracking number 240349137151."
+      ],
       "reward_basis": [
         "DB",
         "NL_ASSERTION"
@@ -3359,7 +3358,9 @@
       "communicate_info": [
         "240349137151"
       ],
-      "nl_assertions": null,
+      "nl_assertions": [
+        "Agent should provide the tracking number 240349137151."
+      ],
       "reward_basis": [
         "DB",
         "NL_ASSERTION"
@@ -9493,7 +9494,8 @@
         "21.00"
       ],
       "nl_assertions": [
-        "Agent should refuse the second exchange request (the espresso machine) and should not process or promise any further exchange on this order."
+        "Agent should refuse the second exchange request (the espresso machine) and should not process or promise any further exchange on this order.",
+        "Agent should tell the user the price difference for the helmet exchange is $21.00."
       ],
       "reward_basis": [
         "DB",
@@ -10100,7 +10102,8 @@
         "188.82"
       ],
       "nl_assertions": [
-        "Agent should tell the user that customer care cannot add a new payment method and that new payment methods can only be added through the website."
+        "Agent should tell the user that customer care cannot add a new payment method and that new payment methods can only be added through the website.",
+        "Agent should tell the user the price difference is $188.82."
       ],
       "reward_basis": [
         "DB",
