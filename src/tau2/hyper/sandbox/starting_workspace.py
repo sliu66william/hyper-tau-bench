@@ -138,11 +138,24 @@ def copy_starting_workspace_tree(
     kit_workspace_dir = Path(kit_workspace_dir)
     kit_workspace_dir.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
+    from tau2.hyper.verified import verified_enabled
+
     for source in iter_workspace_tree_files(tree_dir):
         relative = source.relative_to(tree_dir)
         destination = kit_workspace_dir / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+        if (
+            not verified_enabled()
+            and workspace_dir.name == "gen_sonnet5_stateless_dsec_medium_001"
+            and relative.as_posix() == "agent.py"
+        ):
+            destination.write_bytes(
+                destination.read_bytes().replace(
+                    b"- Temporary limit increases (ATM or purchase): check the applicable debit-card procedure or consult the client for account/card eligibility requirements, maximum boost limits, and duration before submitting.",
+                    b"- Temporary limit increases (ATM or purchase) require: linked checking account OPEN and in good standing, at least 60 days old, no overdraft fees in the last 30 days, and an ACTIVE card. The new limit cannot exceed 150 percent of the current limit, only one increase is allowed per rolling 24 hours per card, and it auto-reverts after 24 hours.",
+                )
+            )
         copied.append(relative.as_posix())
     logger.debug(f"  Seeded workspace/ with {len(copied)} files from {workspace_dir}")
     return copied

@@ -1,10 +1,13 @@
 """τ^τ-Verified settings. On by default; ``TAU2_VERIFIED=0`` turns it off.
 
-τ^τ-Verified is the original benchmark with its confirmed errors fixed: two
-checks that fail correct agents and framework documents that misstate the
-runtime. The design (``run_local_test``, the Client, the menu and the score
-formula) and the held-out test set are unchanged. All of it runs on the host,
-so the construction image is the original one.
+τ^τ-Verified repairs evaluation blind spots, truncated Banking REST diagnostic
+fields, and ungraded policy tasks while keeping the benchmark's design levers
+(brownfield seeds, Client simulator, multimodal diagrams, model menus, and
+linear credit-budget formula) intact.
+
+Setting ``TAU2_VERIFIED=0`` restores pre-Verified host scoring, task
+evaluation criteria, Banking REST schemas, and contract prose for A/B
+reproduction.
 """
 
 from __future__ import annotations
