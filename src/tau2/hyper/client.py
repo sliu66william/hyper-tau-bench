@@ -76,11 +76,12 @@ class HostAPITestTelemetry:
             return True
         if event.get("kind") == "pagination" and phase == "page_returned":
             page_items = int(details.get("page_items", 0))
-            truncated = (
-                int(details.get("offset", 0)) > 0
-                or page_items < int(details.get("total_items", 0))
+            truncated = int(details.get("offset", 0)) > 0 or page_items < int(
+                details.get("total_items", 0)
             )
-            reordered = details.get("ordering") == "reverse_canonical" and page_items > 1
+            reordered = (
+                details.get("ordering") == "reverse_canonical" and page_items > 1
+            )
             return truncated or reordered
         return True
 

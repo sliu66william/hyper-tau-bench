@@ -101,12 +101,7 @@ class LiveExperimentContext:
                     simulations_dir / f"live_experiment_{timestamp}_{suffix}.json"
                 )
                 suffix += 1
-            flags = (
-                os.O_WRONLY
-                | os.O_CREAT
-                | os.O_EXCL
-                | getattr(os, "O_NOFOLLOW", 0)
-            )
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
             fd = os.open(candidate, flags, 0o644)
             try:
                 os.write(fd, report.encode("utf-8"))

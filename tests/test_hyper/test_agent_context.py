@@ -681,7 +681,9 @@ def test_model_gateway_rejects_cross_spelling_reasoning_escalation(monkeypatch):
             {
                 "model": "capped-thinking",
                 "constraints": {
-                    "extra_body": {"thinking": {"type": "enabled", "budget_tokens": 2048}}
+                    "extra_body": {
+                        "thinking": {"type": "enabled", "budget_tokens": 2048}
+                    }
                 },
             },
         ],
@@ -699,5 +701,3 @@ def test_model_gateway_rejects_cross_spelling_reasoning_escalation(monkeypatch):
             messages=[],
             reasoning_effort="xhigh",
         )
-
-

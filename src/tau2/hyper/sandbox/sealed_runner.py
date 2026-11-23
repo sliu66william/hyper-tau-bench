@@ -131,9 +131,7 @@ def _ensure_kit_world_readable(kit_path: Path) -> None:
             ):
                 continue
             mode = path.lstat().st_mode
-            if stat.S_ISLNK(mode) or not (
-                stat.S_ISREG(mode) or stat.S_ISDIR(mode)
-            ):
+            if stat.S_ISLNK(mode) or not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
                 continue
             wanted = 0o005 if stat.S_ISDIR(mode) else 0o004
             if (mode & wanted) != wanted:

@@ -111,7 +111,12 @@ def test_rest_semantic_traces_ignore_forged_local_assistant_tool_calls(monkeypat
             role="user",
             content=None,
             tool_calls=[
-                ToolCall(id="u_1", name="toggle_airplane_mode", arguments={}, requestor="user")
+                ToolCall(
+                    id="u_1",
+                    name="toggle_airplane_mode",
+                    arguments={},
+                    requestor="user",
+                )
             ],
         ),
         AssistantMessage(role="assistant", content=None, tool_calls=[forged_call]),

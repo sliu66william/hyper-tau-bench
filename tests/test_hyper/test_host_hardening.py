@@ -222,8 +222,6 @@ def test_host_git_rejects_objects_info_alternates_and_falls_back_to_snapshot(tmp
     assert deleted == []
 
 
-
-
 def test_contamination_scan_reads_past_padding_and_across_chunk_boundaries(
     tmp_path, monkeypatch
 ):

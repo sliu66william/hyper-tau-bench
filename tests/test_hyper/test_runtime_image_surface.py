@@ -189,7 +189,12 @@ def test_strip_removes_benchmark_naming_project_root_files():
     internals must also be removed and never copied into the runtime image.
     """
     root = set(strip.REMOVE_PROJECT_ROOT)
-    assert {"README.md", "pyproject.toml", "uv.lock", "data/tau2/user_simulator"} <= root
+    assert {
+        "README.md",
+        "pyproject.toml",
+        "uv.lock",
+        "data/tau2/user_simulator",
+    } <= root
     outside = set(strip.REMOVE_OUTSIDE_HYPER)
     assert {
         "api_service",

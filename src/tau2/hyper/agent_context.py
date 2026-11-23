@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-import os
 from pathlib import Path
 from threading import Lock
 from typing import Any, Iterator, Mapping, Optional, Sequence
@@ -210,7 +210,9 @@ def _cross_spelling_reasoning_conflict(
     constraints: Mapping[str, Any], kwargs: Mapping[str, Any]
 ) -> Optional[str]:
     """Detect cross-key attempts to enable or escalate reasoning on constrained seats."""
-    if not _verified_enabled() or not _has_reasoning_or_thinking_constraint(constraints):
+    if not _verified_enabled() or not _has_reasoning_or_thinking_constraint(
+        constraints
+    ):
         return None
 
     off_pin = reasoning_off_pin(constraints)
@@ -235,13 +237,15 @@ def _cross_spelling_reasoning_conflict(
                     f"pinned extra_body.reasoning.effort={eb_effort!r}"
                 )
         else:
-            return (
-                f"reasoning_effort={val!r} conflicts with configured thinking constraint"
-            )
+            return f"reasoning_effort={val!r} conflicts with configured thinking constraint"
 
     if "thinking" not in constraints and "thinking" in kwargs:
         if not (off_pin is not None and kwargs["thinking"] == {"type": "disabled"}):
-            target = f"pinned {off_pin}" if off_pin is not None else "configured reasoning/thinking constraint"
+            target = (
+                f"pinned {off_pin}"
+                if off_pin is not None
+                else "configured reasoning/thinking constraint"
+            )
             return f"thinking={kwargs['thinking']!r} conflicts with {target}"
 
     return None

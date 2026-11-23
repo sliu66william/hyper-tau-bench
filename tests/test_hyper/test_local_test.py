@@ -654,7 +654,10 @@ def test_local_test_freezes_manifest_against_developer_tampering(tmp_path):
                     {
                         "model": "gpt-5.4",
                         "constraints": {},
-                        "credit_rates": {"input_per_million": 0.0, "output_per_million": 0.0},
+                        "credit_rates": {
+                            "input_per_million": 0.0,
+                            "output_per_million": 0.0,
+                        },
                     }
                 ],
                 "performance_requirements": [],
@@ -696,6 +699,3 @@ def test_callback_broker_validates_and_clamps_max_steps_without_burning_quota(tm
     )
     assert broker.local_tests_used == 1
     assert calls == [("s.json", 200)]
-
-
-

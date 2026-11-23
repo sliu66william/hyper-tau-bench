@@ -92,7 +92,8 @@ class CallbackBroker:
         )
         if (
             self.client_context is not None
-            and getattr(self.client_context, "api_test_telemetry_provider", None) is None
+            and getattr(self.client_context, "api_test_telemetry_provider", None)
+            is None
             and hasattr(self._toolkit, "get_client_api_test_telemetry")
         ):
             self.client_context.api_test_telemetry_provider = (

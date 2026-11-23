@@ -364,6 +364,3 @@ def test_resource_scoped_defects_are_exempt_from_the_telemetry_gate():
     )
     context.talk("getLine returns contract_end_date with a T00:00:00Z suffix")
     assert "['line_contract_end_datetime_v1'] cannot be reproduced" in seen[0]
-
-
-

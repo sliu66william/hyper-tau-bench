@@ -140,9 +140,7 @@ def _has_symlink_ancestor(path: Path, resolved_root: Path) -> bool:
     return resolved_root.is_symlink()
 
 
-def _safe_regular_kit_files(
-    kit_path: Path, rel_dir: str = "workspace"
-) -> list[Path]:
+def _safe_regular_kit_files(kit_path: Path, rel_dir: str = "workspace") -> list[Path]:
     """Return regular non-symlink files inside ``kit_path / rel_dir``."""
     raw_kit = Path(kit_path)
     if raw_kit.is_symlink():
@@ -333,9 +331,7 @@ def _classify_workspace_provenance(
         return None, []
 
     resolved_kit = Path(kit_path).resolve()
-    baseline_hashes = _KIT_WORKSPACE_BASELINES.get(
-        (str(resolved_kit), baseline_commit)
-    )
+    baseline_hashes = _KIT_WORKSPACE_BASELINES.get((str(resolved_kit), baseline_commit))
 
     diff_output = None
     untracked_output = None
@@ -356,7 +352,9 @@ def _classify_workspace_provenance(
                         env=env,
                     )
                 except subprocess.TimeoutExpired:
-                    logger.warning(f"Workspace provenance git call timed out ({args[0]})")
+                    logger.warning(
+                        f"Workspace provenance git call timed out ({args[0]})"
+                    )
                     return None
                 if result.returncode != 0:
                     logger.warning(
@@ -383,9 +381,7 @@ def _classify_workspace_provenance(
                     "--",
                     "workspace",
                 )
-                untracked_output = _run_git(
-                    "ls-files", "--others", "--", "workspace"
-                )
+                untracked_output = _run_git("ls-files", "--others", "--", "workspace")
 
     if diff_output is None or untracked_output is None:
         if baseline_hashes is None:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import errno
 import hashlib
 import json
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -398,12 +398,7 @@ class LocalTestService:
             while candidate.exists() or candidate.is_symlink():
                 candidate = simulations_dir / f"local_run_{timestamp}_{suffix}.json"
                 suffix += 1
-            flags = (
-                os.O_WRONLY
-                | os.O_CREAT
-                | os.O_EXCL
-                | getattr(os, "O_NOFOLLOW", 0)
-            )
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
             fd = os.open(candidate, flags, 0o644)
             try:
                 os.write(fd, text.encode("utf-8"))
@@ -438,7 +433,11 @@ class LocalTestService:
         from tau2.hyper.verified import verified_enabled
 
         if verified_enabled():
-            if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
+            if (
+                isinstance(max_steps, bool)
+                or not isinstance(max_steps, int)
+                or max_steps < 1
+            ):
                 raise SandboxToolError("max_steps must be a positive integer")
             max_steps = min(max_steps, 200)
 
@@ -479,9 +478,7 @@ class LocalTestService:
                 solo_mode=solo_mode,
                 development_seed=True,
                 **(
-                    {
-                        "deployment_snapshot": wiring.capability_snapshot_provider()
-                    }
+                    {"deployment_snapshot": wiring.capability_snapshot_provider()}
                     if wiring.capability_snapshot_provider is not None
                     else {}
                 ),

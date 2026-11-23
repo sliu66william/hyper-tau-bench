@@ -31,7 +31,9 @@ def _check_trusted_actions(
     """
     checks: list[ActionCheck] = []
     for gold_action in golden_actions:
-        pool = [call for call in trusted_calls if call.requestor == gold_action.requestor]
+        pool = [
+            call for call in trusted_calls if call.requestor == gold_action.requestor
+        ]
         checks.extend(_check_actions(pool, [gold_action], tool_types))
     return checks
 
