@@ -10,7 +10,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -130,14 +129,7 @@ class DefectActivation(_FrozenModel):
             return False
         if self.call_ordinals and call_ordinal not in self.call_ordinals:
             return False
-        if (
-            (
-                trial_context.execution_mode == "final_evaluation"
-                or os.environ.get("TAU2_VERIFIED", "1") == "0"
-            )
-            and self.resource_ids
-            and not set(self.resource_ids).intersection(resource_ids)
-        ):
+        if self.resource_ids and not set(self.resource_ids).intersection(resource_ids):
             return False
         return True
 

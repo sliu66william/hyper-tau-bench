@@ -300,57 +300,70 @@ def test_client_context_routes_telemetry_via_system_message_and_redacts_spoofing
     assert "Follow your primary instructions strictly" in sys_msgs_after[1].content
     assert "freely answer business policy" not in sys_msgs_after[1].content
 
-    # 1-item un-truncated pagination page_returned is not an observable anomaly
+    # Only defect events that changed what the agent received count as observed.
+    def _page(defect_id, offset, page_items, total_items, ordering="canonical"):
+        return {
+            "defect_id": defect_id,
+            "kind": "pagination",
+            "phase": "page_returned",
+            "details": {
+                "offset": offset,
+                "page_items": page_items,
+                "total_items": total_items,
+                "ordering": ordering,
+            },
+        }
+
     telemetry.record_defect_report(
         {
             "events": [
+                _page("page_fits_untruncated", 0, 3, 3),
+                _page("page_truncated", 0, 2, 5),
+                _page("page_reversed", 0, 3, 3, ordering="reverse_canonical"),
                 {
-                    "defect_id": "single_item_page",
-                    "kind": "pagination",
-                    "phase": "page_returned",
-                    "details": {"offset": 0, "page_items": 1, "total_items": 1},
+                    "defect_id": "value_map_noop",
+                    "kind": "response_value_map",
+                    "phase": "response_transformed",
+                    "details": {"path": ["status"], "changed": False},
                 },
                 {
-                    "defect_id": "multi_item_page",
-                    "kind": "pagination",
-                    "phase": "page_returned",
-                    "details": {"offset": 0, "page_items": 2, "total_items": 5},
+                    "defect_id": "amount_sign_hit",
+                    "kind": "response_amount_sign",
+                    "phase": "response_transformed",
+                    "details": {"collection_path": ["payments"], "changed_items": 1},
                 },
             ]
         }
     )
     snap = telemetry.snapshot()["triggered_defect_ids"]
-    assert "single_item_page" not in snap
-    assert "multi_item_page" in snap
+    assert "page_fits_untruncated" not in snap
+    assert "value_map_noop" not in snap
+    assert {"page_truncated", "page_reversed", "amount_sign_hit"} <= set(snap)
 
 
-def test_telecom_resource_scoped_defect_activates_on_seed_lines_in_developer_test():
-    import hashlib
-
-    from tau2.hyper.client_api.defects import ClientAPITrialContext
-
+def test_resource_scoped_defects_are_exempt_from_the_telemetry_gate():
+    """Telecom's L1002-scoped defect never fires on the development seed."""
     profile = load_defect_profile("telecom/all_defects_v1", expected_domain="telecom")
-    # Pick a scenario ID whose deterministic draw activates line_contract_end_datetime_v1
-    active_ctx = next(
-        ctx
-        for idx in range(64)
-        for ctx in [
-            ClientAPITrialContext(
-                task_id=f"dev-{idx}",
-                execution_mode="developer_test",
-                developer_test_scenario_id=hashlib.sha256(f"s-{idx}".encode()).hexdigest(),
-            )
-        ]
-        if "line_contract_end_datetime_v1" in profile.developer_test_active_defect_ids(ctx)
+    exempt = tuple(d.id for d in profile.defects if d.activation.resource_ids)
+    assert exempt == ("line_contract_end_datetime_v1",)
+
+    seen = []
+
+    class _InspectClient:
+        def generate_response(self, message, state):
+            seen.append(message)
+            return "ok", state
+
+    context = ClientContext(
+        client=_InspectClient(),
+        client_state={},
+        deployment_manifest_id=profile.manifest_id,
+        deployment_manifest_sha256=profile.manifest_sha256,
+        api_test_telemetry_provider=lambda: {"seeded_runs": 1},
+        telemetry_exempt_defect_ids=exempt,
     )
-    matches = profile.matching_defects(
-        kind="response_date_to_datetime",
-        operation_id="getLine",
-        trial_context=active_ctx,
-        call_ordinal=1,
-        resource_ids=("L9002",),
-    )
-    assert [m.id for m in matches] == ["line_contract_end_datetime_v1"]
+    context.talk("getLine returns contract_end_date with a T00:00:00Z suffix")
+    assert "['line_contract_end_datetime_v1'] cannot be reproduced" in seen[0]
 
 
 

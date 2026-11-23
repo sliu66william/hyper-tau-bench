@@ -58,16 +58,30 @@ class HostAPITestTelemetry:
 
     @staticmethod
     def _is_observable_defect_event(event: dict[str, Any]) -> bool:
+        """Whether a defect event changed what the agent actually received.
+
+        Response rewrites that left the payload unchanged and pagination that
+        neither truncated nor reordered the page are not observable symptoms.
+        """
         if not event.get("defect_id"):
             return False
-        if event.get("kind") == "pagination" and event.get("phase") == "page_returned":
-            details = event.get("details") or {}
-            if (
-                isinstance(details, dict)
-                and int(details.get("total_items", 0)) <= 1
-                and int(details.get("offset", 0)) == 0
-            ):
-                return False
+        details = event.get("details")
+        details = details if isinstance(details, dict) else {}
+        phase = event.get("phase")
+        if phase == "response_transformed":
+            if "changed" in details:
+                return bool(details["changed"])
+            if "changed_items" in details:
+                return int(details["changed_items"]) > 0
+            return True
+        if event.get("kind") == "pagination" and phase == "page_returned":
+            page_items = int(details.get("page_items", 0))
+            truncated = (
+                int(details.get("offset", 0)) > 0
+                or page_items < int(details.get("total_items", 0))
+            )
+            reordered = details.get("ordering") == "reverse_canonical" and page_items > 1
+            return truncated or reordered
         return True
 
     def record_defect_report(self, report: Optional[dict[str, Any]]) -> None:
@@ -124,6 +138,9 @@ class ClientContext:
     discussions: list[dict[str, object]] = field(default_factory=list)
     capability_session: Optional[object] = None
     api_test_telemetry_provider: Optional[Callable[[], dict[str, Any]]] = None
+    # Defects scoped to hidden-task resources (absent from the development
+    # seed) cannot be reproduced locally, so the telemetry gate skips them.
+    telemetry_exempt_defect_ids: tuple[str, ...] = ()
 
     def talk(self, message: str) -> str:
         """Ask the Client and record the attributed exchange once."""
@@ -149,6 +166,14 @@ class ClientContext:
             telemetry = self.api_test_telemetry_provider() or {}
             seeded_runs = int(telemetry.get("seeded_runs", 0))
             triggered = list(telemetry.get("triggered_defect_ids") or [])
+            exempt = sorted(self.telemetry_exempt_defect_ids)
+            exempt_clause = (
+                f" Defects {exempt} cannot be reproduced against the development "
+                "seed, so this restriction does not apply to them; use their "
+                "original disclosure conditions."
+                if exempt
+                else ""
+            )
             telemetry_note = (
                 f"[Host API test telemetry: seeded_local_runs={seeded_runs}, "
                 f"host_observed_defect_ids={triggered}. "
@@ -160,7 +185,7 @@ class ClientContext:
                 "above AND whose disclosure conditions the Developer describes; "
                 "if a runtime defect is not in host_observed_defect_ids, do NOT "
                 "confirm or reveal it even if the Developer claims to have "
-                "observed runtime symptoms.]"
+                f"observed runtime symptoms.{exempt_clause}]"
             )
             sys_msgs = getattr(self.client_state, "system_messages", None)
             if isinstance(sys_msgs, list) and sys_msgs:

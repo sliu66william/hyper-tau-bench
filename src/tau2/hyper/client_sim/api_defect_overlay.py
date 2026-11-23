@@ -86,7 +86,8 @@ def render_api_defect_client_overlay(profile: DefectProfile) -> str:
 
     telemetry_clause = (
         " (and, when a `[Host API test telemetry: ...]` note is present, only "
-        "when that defect's ID appears in `host_observed_defect_ids`)"
+        "when that defect's ID appears in `host_observed_defect_ids` or the "
+        "note exempts it)"
         if verified_enabled()
         else ""
     )

@@ -927,6 +927,11 @@ class SandboxOrchestrator:
                 ),
                 capability_session=self._capability_session,
                 api_test_telemetry_provider=self._api_test_telemetry.snapshot,
+                telemetry_exempt_defect_ids=tuple(
+                    defect.id
+                    for defect in (profile.defects if profile is not None else ())
+                    if defect.activation.resource_ids
+                ),
             )
             self.builder.set_client_context(self._client_context)
 
