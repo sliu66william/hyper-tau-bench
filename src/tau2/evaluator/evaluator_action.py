@@ -1,4 +1,3 @@
-from functools import lru_cache
 import re
 from typing import Optional, get_args
 
@@ -18,20 +17,23 @@ from tau2.evaluator.evaluator_base import EvaluatorBase
 TRANSFER_TOOL = "transfer_to_human_agents"
 
 
-@lru_cache(maxsize=1)
-def _canonical_client_api_operation_names() -> frozenset[str]:
-    """Return canonical reference action names backed by Client REST operations."""
-    names: set[str] = {TRANSFER_TOOL}
-    try:
-        from tau2.hyper.client_api.catalogs import airline, banking, retail, telecom
+def _check_trusted_actions(
+    trusted_calls: list[ToolCall],
+    golden_actions: list[Action],
+    tool_types: Optional[dict[str, ToolType]] = None,
+) -> list[ActionCheck]:
+    """Match each gold action only against trusted calls from the same requestor.
 
-        for mod in (airline, banking, retail, telecom):
-            for op in mod.operations():
-                names.add(op.operation_id)
-                names.update(op.reference_tool_names)
-    except Exception:
-        pass
-    return frozenset(names)
+    In a REST trace the agent's own ``tool_calls`` are untrusted wrapper names
+    it chose itself, so every gold action is matched against customer tool
+    calls and host-recorded ``semantic_tool_calls`` only. Requiring the same
+    requestor stops an agent-side call from satisfying a customer-side action.
+    """
+    checks: list[ActionCheck] = []
+    for gold_action in golden_actions:
+        pool = [call for call in trusted_calls if call.requestor == gold_action.requestor]
+        checks.extend(_check_actions(pool, [gold_action], tool_types))
+    return checks
 
 
 def _reason_from_summary(gold_action: Action) -> bool:
@@ -224,9 +226,9 @@ class ActionEvaluator(EvaluatorBase[Message]):
         Evaluate whether the agent performed the expected actions.
 
         In τ^τ-Verified REST trajectories (carrying ``semantic_tool_calls``),
-        canonical Client API actions (such as ``transfer_to_human_agents``)
-        must match host-verified ``semantic_tool_calls`` rather than untrusted
-        candidate wrapper names on ``AssistantMessage.tool_calls``.
+        every gold action must match a customer tool call or a host-verified
+        ``semantic_tool_calls`` entry from the same requestor, never an
+        untrusted candidate wrapper name on ``AssistantMessage.tool_calls``.
         """
         if len(golden_actions) == 0:
             return []
@@ -242,18 +244,11 @@ class ActionEvaluator(EvaluatorBase[Message]):
                 cls.extract_tool_calls(full_trajectory), golden_actions, tool_types
             )
 
-        all_calls = cls.extract_tool_calls(full_trajectory)
-        verified_calls = cls._extract_verified_semantic_calls(full_trajectory)
-        canonical_op_names = _canonical_client_api_operation_names()
-        checks: list[ActionCheck] = []
-        for gold_action in golden_actions:
-            pool = (
-                verified_calls
-                if gold_action.name in canonical_op_names
-                else all_calls
-            )
-            checks.extend(_check_actions(pool, [gold_action], tool_types))
-        return checks
+        return _check_trusted_actions(
+            cls._extract_verified_semantic_calls(full_trajectory),
+            golden_actions,
+            tool_types,
+        )
 
 
 class FullDuplexActionEvaluator(EvaluatorBase[Tick]):
@@ -365,15 +360,8 @@ class FullDuplexActionEvaluator(EvaluatorBase[Tick]):
                 cls.extract_tool_calls(full_trajectory), golden_actions, tool_types
             )
 
-        all_calls = cls.extract_tool_calls(full_trajectory)
-        verified_calls = cls._extract_verified_semantic_calls(full_trajectory)
-        canonical_op_names = _canonical_client_api_operation_names()
-        checks: list[ActionCheck] = []
-        for gold_action in golden_actions:
-            pool = (
-                verified_calls
-                if gold_action.name in canonical_op_names
-                else all_calls
-            )
-            checks.extend(_check_actions(pool, [gold_action], tool_types))
-        return checks
+        return _check_trusted_actions(
+            cls._extract_verified_semantic_calls(full_trajectory),
+            golden_actions,
+            tool_types,
+        )

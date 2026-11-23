@@ -162,6 +162,51 @@ def test_rest_semantic_traces_ignore_forged_local_assistant_tool_calls(monkeypat
     assert "customer_demands_after_unavailable_offer_refusal" in rendered_real
 
 
+def test_rest_agent_wrapper_cannot_satisfy_customer_side_gold_action(monkeypatch):
+    """Banking task_034 grades the customer's request_human_agent_transfer."""
+    monkeypatch.setenv(VERIFIED_ENV, "1")
+    gold = Action(
+        action_id="034_0",
+        requestor="user",
+        name="request_human_agent_transfer",
+        arguments={},
+        compare_args=[],
+    )
+    trace_marker = ToolMessage(
+        id="tc_0", role="tool", content="{}", semantic_tool_calls=[]
+    )
+    forged = [
+        AssistantMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(id="tc_0", name="request_human_agent_transfer", arguments={})
+            ],
+        ),
+        trace_marker,
+    ]
+    [forged_check] = ActionEvaluator.evaluate_actions(forged, [gold])
+    assert not forged_check.action_match
+
+    genuine = [
+        UserMessage(
+            role="user",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="u_0",
+                    name="request_human_agent_transfer",
+                    arguments={},
+                    requestor="user",
+                )
+            ],
+        ),
+        trace_marker,
+    ]
+    [genuine_check] = ActionEvaluator.evaluate_actions(genuine, [gold])
+    assert genuine_check.action_match
+
+
 def test_openings_show_body_after_preamble_and_collapse_step_numbering(
     monkeypatch,
 ):
