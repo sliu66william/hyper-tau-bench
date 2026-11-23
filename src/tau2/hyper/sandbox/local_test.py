@@ -540,7 +540,6 @@ class LocalTestService:
 
         results = []
         credit_usages = []
-        scenario_rewards = []
         records = []
         mock_dev_env = None
         error_count = 0
@@ -645,7 +644,6 @@ class LocalTestService:
                 ]
                 results.append(result)
                 credit_usages.append(result.agent_credit_usage)
-                scenario_rewards.append(float(result.reward))
                 records.append(
                     {
                         "task_path": task_file.relative_to(
@@ -692,7 +690,6 @@ class LocalTestService:
                 active_runtimes.clear()
                 error_count += 1
                 credit_usages.append(None)
-                scenario_rewards.append(0.0)
                 error_record = {
                     "task_path": task_file.relative_to(self.sandbox_root).as_posix(),
                     "task_id": None,
@@ -743,7 +740,6 @@ class LocalTestService:
             performance_requirements,
             [message for result in results for message in result.messages],
             credit_usages,
-            task_rewards=scenario_rewards,
         )
         latency = performance["summary"]
         if latency["sample_count"]:
