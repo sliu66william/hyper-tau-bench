@@ -78,8 +78,53 @@ from tau2.runner.build import load_tasks_from_file
 # In-world neutral: the kit's git identity is Developer-visible (git log),
 # so it must not name the benchmark or harness.
 _KIT_BASELINE_MESSAGE = "Initial import"
-_MAX_CONTAMINATION_SCAN_BYTES = 16 * 1024 * 1024
+_CONTAMINATION_SCAN_CHUNK_CHARS = 1024 * 1024
 _KIT_WORKSPACE_BASELINES: dict[tuple[str, str], dict[str, str]] = {}
+
+
+def _scan_file_for_patterns(
+    path: Path, patterns: list[str]
+) -> list[tuple[int, str, str]]:
+    """Return ``(line, pattern, excerpt)`` hits over the whole file.
+
+    Streams bounded chunks so padding cannot push content past a size cap
+    and a huge single line cannot exhaust host memory; a short overlap keeps
+    patterns that straddle a chunk boundary detectable.
+    """
+    overlap = max((len(pattern) for pattern in patterns), default=1) - 1
+    hits: list[tuple[int, str, str]] = []
+    line_no = 1
+    head = ""
+    tail = ""
+    line_patterns: list[str] = []
+
+    def _flush_line() -> None:
+        excerpt = head.strip()[:500]
+        hits.extend((line_no, pattern, excerpt) for pattern in line_patterns)
+
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        while True:
+            piece = handle.readline(_CONTAMINATION_SCAN_CHUNK_CHARS)
+            if not piece:
+                break
+            ends_line = piece.endswith("\n")
+            body = piece[:-1] if ends_line else piece
+            if len(head) < 1000:
+                head += body[: 1000 - len(head)]
+            window = tail + body
+            for pattern in patterns:
+                if pattern not in line_patterns and pattern in window:
+                    line_patterns.append(pattern)
+            tail = window[-overlap:] if overlap > 0 else ""
+            if ends_line:
+                _flush_line()
+                line_no += 1
+                head = ""
+                tail = ""
+                line_patterns = []
+    if head or line_patterns:
+        _flush_line()
+    return hits
 
 
 def _has_symlink_ancestor(path: Path, resolved_root: Path) -> bool:
@@ -470,22 +515,18 @@ def _build_contamination_report(
             skipped_baseline_files += 1
             continue
         try:
-            with path.open("rb") as handle:
-                raw = handle.read(_MAX_CONTAMINATION_SCAN_BYTES)
-            text = raw.decode("utf-8", errors="replace")
+            hits = _scan_file_for_patterns(path, patterns)
         except OSError:
             continue
-        for line_no, line in enumerate(text.splitlines(), 1):
-            for pattern in patterns:
-                if pattern in line:
-                    matches.append(
-                        {
-                            "path": rel,
-                            "line": line_no,
-                            "pattern": pattern,
-                            "excerpt": line.strip()[:500],
-                        }
-                    )
+        for line_no, pattern, excerpt in hits:
+            matches.append(
+                {
+                    "path": rel,
+                    "line": line_no,
+                    "pattern": pattern,
+                    "excerpt": excerpt,
+                }
+            )
 
     return {
         "status": "matches_found" if matches else "clean",

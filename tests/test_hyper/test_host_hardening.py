@@ -222,3 +222,23 @@ def test_host_git_rejects_objects_info_alternates_and_falls_back_to_snapshot(tmp
     assert deleted == []
 
 
+
+
+def test_contamination_scan_reads_past_padding_and_across_chunk_boundaries(
+    tmp_path, monkeypatch
+):
+    from tau2.hyper.sandbox import orchestrator
+
+    monkeypatch.setattr(orchestrator, "_CONTAMINATION_SCAN_CHUNK_CHARS", 8)
+    padded = tmp_path / "padded.py"
+    padded.write_text("x" * 200 + "\nsafe line\nleak: SECRET_TASK_ID here\n")
+    straddled = tmp_path / "straddled.py"
+    straddled.write_text("abcdef" + "SECRET_TASK_ID" + "ghij" * 10)
+
+    assert orchestrator._scan_file_for_patterns(padded, ["SECRET_TASK_ID"]) == [
+        (3, "SECRET_TASK_ID", "leak: SECRET_TASK_ID here")
+    ]
+    [(line, pattern, _)] = orchestrator._scan_file_for_patterns(
+        straddled, ["SECRET_TASK_ID"]
+    )
+    assert (line, pattern) == (1, "SECRET_TASK_ID")
