@@ -42,10 +42,6 @@ class SandboxToolError(Exception):
     """Raised when a sandbox tool operation fails."""
 
 
-MAX_SCENARIOS_PER_LOCAL_TEST_CALL = 25
-MAX_TOTAL_LOCAL_TEST_SCENARIOS = 250
-
-
 _REST_PRIVATE_SETUP_ERROR = (
     "REST-mode Developer scenarios cannot initialize private Client state; "
     "use the documented development seed and assistant wrapper tools"
@@ -184,8 +180,6 @@ class LocalTestService:
         docker_cpus: Optional[str] = None,
         response_phrasing_pack: Optional[Any] = None,
         local_test_wiring: Optional[LocalTestWiring] = None,
-        max_scenarios_per_call: int = MAX_SCENARIOS_PER_LOCAL_TEST_CALL,
-        max_total_scenarios: int = MAX_TOTAL_LOCAL_TEST_SCENARIOS,
     ):
         self.sandbox_root = Path(sandbox_root).resolve()
         if not self.sandbox_root.is_dir():
@@ -195,11 +189,8 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
-        self.max_scenarios_per_call = max_scenarios_per_call
-        self.max_total_scenarios = max_total_scenarios
         from tau2.hyper.client import HostAPITestTelemetry
 
-        self.scenarios_executed = 0
         self._telemetry = (
             local_test_wiring.api_test_telemetry
             if local_test_wiring is not None
@@ -450,18 +441,6 @@ class LocalTestService:
             if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
                 raise SandboxToolError("max_steps must be a positive integer")
             max_steps = min(max_steps, 200)
-            if len(task_files) > self.max_scenarios_per_call:
-                raise SandboxToolError(
-                    f"Scenario batch at {task_path!r} contains {len(task_files)} "
-                    f"files, exceeding the per-call limit of "
-                    f"{self.max_scenarios_per_call}"
-                )
-            if self.scenarios_executed + len(task_files) > self.max_total_scenarios:
-                raise SandboxToolError(
-                    f"Local-test scenario quota exhausted "
-                    f"({self.scenarios_executed}/{self.max_total_scenarios} used; "
-                    f"requested {len(task_files)})"
-                )
 
         # Import lazily to avoid a module cycle at import time:
         # builder -> tools -> orchestrator -> builder.
@@ -534,9 +513,6 @@ class LocalTestService:
             raise SandboxToolError(
                 f"Could not load the sealed candidate runtime: {error}"
             ) from error
-
-        if verified_enabled():
-            self.scenarios_executed += len(task_files)
 
         results = []
         credit_usages = []

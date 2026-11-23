@@ -664,48 +664,6 @@ def test_local_test_freezes_manifest_against_developer_tampering(tmp_path):
     assert service._load_developer_manifest() == canonical
 
 
-def test_local_test_caps_directory_scenario_batching(tmp_path):
-    scenarios = tmp_path / "scenarios"
-    scenarios.mkdir()
-    for idx in range(4):
-        (scenarios / f"s_{idx}.json").write_text(
-            json.dumps({"id": f"s_{idx}", "user_scenario": {"instructions": "hi"}})
-        )
-    service = LocalTestService(
-        tmp_path,
-        local_test_wiring=LocalTestWiring(domain="telecom", user_llm="gpt-5.5"),
-        max_scenarios_per_call=3,
-        max_total_scenarios=5,
-    )
-    with pytest.raises(SandboxToolError, match="exceeding the per-call limit of 3"):
-        service.run_local_test("scenarios")
-    assert service.scenarios_executed == 0
-
-
-def test_local_test_does_not_burn_scenario_quota_when_candidate_fails_to_load(
-    tmp_path, monkeypatch
-):
-    (tmp_path / "framework").mkdir()
-    (tmp_path / "framework" / "deployment_manifest.json").write_text(
-        json.dumps({"allowed_agent_models": [{"model": "gpt-5.5", "constraints": {}}]})
-    )
-    (tmp_path / "s.json").write_text(
-        json.dumps({"id": "s", "user_scenario": {"instructions": "hi"}})
-    )
-    monkeypatch.setattr(
-        "tau2.hyper.sandbox.sealed_runner.SealedCandidateEnvironment.template",
-        classmethod(lambda cls, cfg: (_ for _ in ()).throw(RuntimeError("syntax error"))),
-    )
-    service = LocalTestService(
-        tmp_path,
-        local_test_wiring=LocalTestWiring(domain="telecom", user_llm="gpt-5.5"),
-        max_total_scenarios=5,
-    )
-    with pytest.raises(SandboxToolError, match="Could not load"):
-        service.run_local_test("s.json")
-    assert service.scenarios_executed == 0
-
-
 def test_callback_broker_validates_and_clamps_max_steps_without_burning_quota(tmp_path):
     from tau2.hyper.sandbox.callback_broker import CallbackBroker, CallbackBrokerError
 

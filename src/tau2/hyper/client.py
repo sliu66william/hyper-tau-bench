@@ -132,7 +132,6 @@ class ClientContext:
     client: object
     client_state: object
     turns_used: int = 0
-    max_turns: int = 24
     deployment_manifest_id: Optional[str] = None
     deployment_manifest_sha256: Optional[str] = None
     discussions: list[dict[str, object]] = field(default_factory=list)
@@ -145,13 +144,6 @@ class ClientContext:
     def talk(self, message: str) -> str:
         """Ask the Client and record the attributed exchange once."""
         from tau2.hyper.verified import verified_enabled
-
-        if verified_enabled() and self.turns_used >= self.max_turns:
-            return (
-                "We have already covered a lot of ground in our conversations. "
-                "Please proceed based on our earlier clarifications and the "
-                "supplied operational materials."
-            )
 
         effective_message = (
             _SPOOFED_TELEMETRY_RE.sub("[redacted-developer-claim]", message)
