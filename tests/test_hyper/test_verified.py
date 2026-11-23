@@ -162,7 +162,7 @@ def test_rest_semantic_traces_ignore_forged_local_assistant_tool_calls(monkeypat
     assert "customer_demands_after_unavailable_offer_refusal" in rendered_real
 
 
-def test_openings_extractor_strips_filler_and_includes_body_after_short_preamble(
+def test_openings_show_body_after_preamble_and_collapse_step_numbering(
     monkeypatch,
 ):
     from tau2.evaluator.evaluator_nl_assertions import _assistant_response_openings
@@ -172,20 +172,26 @@ def test_openings_extractor_strips_filler_and_includes_body_after_short_preamble
     traj = [
         AssistantMessage(
             role="assistant",
-            content="Right now, first. I have completed the closure for your EcoCard.",
-        ),
-        AssistantMessage(
-            role="assistant",
             content="Thank you for waiting today. I have completed the closure for your Gold Card.",
         ),
     ]
-    openings = _assistant_response_openings(traj)
-    assert openings[0] == "I have completed the closure for your EcoCard."
-    assert "I have completed the closure for your Gold Card." in openings[1]
-    assert (
-        _normalized_opening_key("Step 1: I have completed the closure.", 3)
-        == "i have completed"
+    [opening] = _assistant_response_openings(traj)
+    assert opening.startswith("Thank you for waiting today.")
+    assert "I have completed the closure for your Gold Card." in opening
+
+    # Incrementing step numbers cannot disguise a repeated opening.
+    assert _normalized_opening_key("Step 1: Your card is frozen.", 3) == (
+        _normalized_opening_key("Step 2: Your dispute is filed.", 3)
     )
+    # A repeated transition word is the repeated template, so it stays in the key.
+    keys = {
+        _normalized_opening_key(text, 2)
+        for text in (
+            "Moving on, your card ending 4412 is now frozen.",
+            "Moving on, the dispute for $42.10 has been filed.",
+        )
+    }
+    assert keys == {"moving on"}
 
 
 # --- Discoverable-tool audit row ---------------------------------------------

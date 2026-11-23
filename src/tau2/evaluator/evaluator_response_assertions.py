@@ -54,17 +54,19 @@ def _matching_response_snippets(
 
 
 def _normalized_opening_key(text: str, token_count: int) -> str | None:
-    from tau2.evaluator.evaluator_nl_assertions import strip_discourse_filler_prefix
     from tau2.hyper.verified import verified_enabled
 
-    if verified_enabled():
-        text = strip_discourse_filler_prefix(text)
     text = re.sub(r"\*\*|`", " ", text)
     text = re.sub(r"#[A-Za-z]?\d+", "ID", text)
     text = re.sub(r"\b[A-Z0-9]{5,8}\b", "ID", text)
     text = re.sub(r"\b\d{3}[- .]?\d{3}[- .]?\d{4}\b", "ID", text)
     text = re.sub(r"\b[a-z]+_[a-z0-9_]+\b", "ID", text, flags=re.IGNORECASE)
     text = re.sub(r"\b\d{3,}\b", "NUM", text)
+    if verified_enabled():
+        # Collapse step/list numbering ("Step 1:", "2.") so incrementing
+        # numbers cannot disguise a repeated opening. Token-wise, so any
+        # keys that matched before still match.
+        text = re.sub(r"\b\d+\b", "NUM", text)
     text = re.sub(r"[’']", "'", text)
     text = text.lower().strip()
     text = re.sub(r"^[^a-z0-9]+", "", text)
