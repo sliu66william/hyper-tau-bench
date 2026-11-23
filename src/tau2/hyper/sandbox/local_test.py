@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import os
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from loguru import logger
 
 from tau2.hyper.runtime_contract import DEFAULT_CONSTRUCTION_RUNTIME_IMAGE
 
@@ -28,6 +33,8 @@ class LocalTestWiring:
     client_api_mode: Optional[str] = None
     client_api_defect_profile: Optional[Any] = None
     capability_snapshot_provider: Optional[Callable[[], Any]] = None
+    allowed_agent_models: Optional[list[dict[str, Any]]] = None
+    performance_requirements: Optional[list[Any]] = None
 
 
 class SandboxToolError(Exception):
@@ -181,10 +188,54 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
+        self._canonical_manifest: Optional[dict[str, Any]] = None
+        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        if (
+            manifest_path.is_file()
+            and not manifest_path.is_symlink()
+            and not manifest_path.parent.is_symlink()
+        ):
+            try:
+                loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    self._canonical_manifest = loaded
+            except (OSError, json.JSONDecodeError):
+                self._canonical_manifest = None
+
+        if local_test_wiring is not None and (
+            local_test_wiring.allowed_agent_models is not None
+            or local_test_wiring.performance_requirements is not None
+        ):
+            base = (
+                deepcopy(self._canonical_manifest)
+                if isinstance(self._canonical_manifest, dict)
+                else {}
+            )
+            if local_test_wiring.allowed_agent_models is not None:
+                base["allowed_agent_models"] = deepcopy(
+                    local_test_wiring.allowed_agent_models
+                )
+            if local_test_wiring.performance_requirements is not None:
+                base["performance_requirements"] = [
+                    req.model_dump(mode="json")
+                    if hasattr(req, "model_dump")
+                    else deepcopy(req)
+                    for req in local_test_wiring.performance_requirements
+                ]
+            self._canonical_manifest = base
 
     def _resolve_path(self, path: str) -> Path:
-        """Resolve a path relative to the sandbox root, blocking escapes."""
-        resolved = (self.sandbox_root / path).resolve()
+        """Resolve a path relative to the sandbox root, blocking escapes and symlinks."""
+        candidate = self.sandbox_root / path
+        current = candidate
+        while current != self.sandbox_root:
+            if current.is_symlink():
+                raise SandboxToolError(f"Symlink paths are not allowed: {path!r}")
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+        resolved = candidate.resolve()
         if not resolved.is_relative_to(self.sandbox_root):
             raise SandboxToolError(
                 f"Path escapes sandbox: {path!r} resolves to {resolved}"
@@ -197,20 +248,24 @@ class LocalTestService:
         if resolved.is_file():
             return [resolved]
         if resolved.is_dir():
-            return sorted(resolved.glob("*.json"))
+            return sorted(p for p in resolved.glob("*.json") if not p.is_symlink())
         raise SandboxToolError(f"Scenario path not found: {task_path}")
 
     def _load_developer_manifest(self) -> dict:
-        """Load the developer-facing deployment manifest from the kit."""
-        manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
+        """Return the host-frozen canonical deployment manifest."""
+        if self._canonical_manifest is not None:
+            return deepcopy(self._canonical_manifest)
+        manifest_path = self._resolve_path("framework/deployment_manifest.json")
         if not manifest_path.is_file():
             raise SandboxToolError(
                 "framework/deployment_manifest.json not found in sandbox root"
             )
         try:
-            return json.loads(manifest_path.read_text())
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             raise SandboxToolError(f"Invalid {manifest_path.name}: {e}") from e
+        self._canonical_manifest = deepcopy(loaded)
+        return deepcopy(loaded)
 
     def _resolve_local_test_wiring(self) -> LocalTestWiring:
         """Return the trusted runtime wiring supplied by the harness."""
@@ -308,17 +363,38 @@ class LocalTestService:
                 )
         return "\n".join(lines)
 
-    def _new_local_test_artifact_path(self) -> Path:
-        """Create a sandbox-local artifact path for a local simulation run."""
-        simulations_dir = self._resolve_path("simulations")
-        simulations_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        candidate = simulations_dir / f"local_run_{timestamp}.json"
-        suffix = 1
-        while candidate.exists():
-            candidate = simulations_dir / f"local_run_{timestamp}_{suffix}.json"
-            suffix += 1
-        return candidate
+    def _persist_local_test_artifact(self, text: str) -> Optional[Path]:
+        """Atomically create and write a local simulation report under ``simulations/``.
+
+        Allocated and opened with ``O_CREAT | O_EXCL`` (and ``O_NOFOLLOW`` where
+        supported) at write time so dangling symlinks or TOCTOU directory swaps
+        inside the Developer-writable kit cannot overwrite host files.
+        """
+        try:
+            if self.sandbox_root.is_symlink():
+                raise OSError(errno.ELOOP, "Sandbox root is a symlink")
+            simulations_dir = self._resolve_path("simulations")
+            if simulations_dir.is_symlink():
+                raise OSError(errno.ELOOP, "simulations directory is a symlink")
+            simulations_dir.mkdir(exist_ok=True)
+            if not simulations_dir.resolve().is_relative_to(self.sandbox_root):
+                raise OSError(errno.ELOOP, "simulations directory escapes sandbox")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            candidate = simulations_dir / f"local_run_{timestamp}.json"
+            suffix = 1
+            while candidate.exists() or candidate.is_symlink():
+                candidate = simulations_dir / f"local_run_{timestamp}_{suffix}.json"
+                suffix += 1
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(candidate, flags, 0o644)
+            try:
+                os.write(fd, text.encode("utf-8"))
+            finally:
+                os.close(fd)
+            return candidate
+        except (SandboxToolError, OSError) as exc:
+            logger.warning(f"Could not persist local-test artifact: {exc}")
+            return None
 
     def run_local_test(
         self,
@@ -340,6 +416,17 @@ class LocalTestService:
         task_files = self._collect_local_task_files(task_path)
         if not task_files:
             raise SandboxToolError(f"No .json scenario files found at: {task_path}")
+
+        from tau2.hyper.verified import verified_enabled
+
+        if verified_enabled():
+            if (
+                isinstance(max_steps, bool)
+                or not isinstance(max_steps, int)
+                or max_steps < 1
+            ):
+                raise SandboxToolError("max_steps must be a positive integer")
+            max_steps = min(max_steps, 200)
 
         # Import lazily to avoid a module cycle at import time:
         # builder -> tools -> orchestrator -> builder.
@@ -414,7 +501,6 @@ class LocalTestService:
         mock_dev_env = None
         error_count = 0
         run_started_at = datetime.now(timezone.utc).isoformat()
-        artifact_path = self._new_local_test_artifact_path()
         # The source-domain name is runtime wiring, not Developer-facing
         # information, so neither the tool output nor the sandbox-local run
         # artifact may carry it.
@@ -651,9 +737,12 @@ class LocalTestService:
             "performance": performance,
             "records": records,
         }
-        artifact_path.write_text(json.dumps(artifact_payload, indent=2, default=str))
-        output_blocks.append(
-            f"Saved artifact: {artifact_path.relative_to(self.sandbox_root).as_posix()}"
+        artifact_path = self._persist_local_test_artifact(
+            json.dumps(artifact_payload, indent=2, default=str)
         )
+        if artifact_path is not None:
+            output_blocks.append(
+                f"Saved artifact: {artifact_path.relative_to(self.sandbox_root).as_posix()}"
+            )
 
         return "\n\n".join(output_blocks)
