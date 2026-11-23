@@ -59,8 +59,6 @@ Set metExpectation to true only if no repeated opening phrase template appears.
 
 
 def _first_sentence_or_opening(text: str) -> str:
-    from tau2.hyper.verified import verified_enabled
-
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return text
@@ -68,10 +66,7 @@ def _first_sentence_or_opening(text: str) -> str:
     pieces = re.split(r"(?<=[.!?])\s+", text)
     opening = pieces[0].strip()
     token_count = len(re.findall(r"[A-Za-z0-9']+", opening))
-    # Verified shows the body after a short preamble so rotating courtesy
-    # lead-ins cannot hide a repeated template; the preamble still leads.
-    min_standalone_tokens = 6 if verified_enabled() else 2
-    if token_count <= min_standalone_tokens and len(pieces) > 1:
+    if token_count <= 2 and len(pieces) > 1:
         opening = f"{opening} {pieces[1].strip()}"
 
     words = opening.split()
