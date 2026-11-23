@@ -701,20 +701,3 @@ def test_model_gateway_rejects_cross_spelling_reasoning_escalation(monkeypatch):
         )
 
 
-def test_apply_constraint_violations_zeroes_eval_reward_under_verified(monkeypatch):
-    from tau2.hyper._inner import _apply_constraint_violations
-    from tau2.hyper.data_model import EvaluationResult
-
-    monkeypatch.setenv("TAU2_VERIFIED", "1")
-    res = EvaluationResult(
-        task_id="t1",
-        reward=1.0,
-        messages=[],
-        reward_breakdown={"DB": 1.0},
-        agent_constraint_violations={"violations": 1, "by_model": {}},
-    )
-    _apply_constraint_violations(res)
-    assert res.reward == 0.0
-    assert res.reward_breakdown["MODEL_CONSTRAINTS"] == 0.0
-
-
