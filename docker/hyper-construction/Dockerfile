@@ -94,7 +94,6 @@ WORKDIR /opt/tau2
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-COPY data/tau2/user_simulator ./data/tau2/user_simulator
 COPY docker/hyper-construction/strip_runtime_src.py /opt/build/strip_runtime_src.py
 
 # Builder agents can read everything under /opt/tau2, so the runtime tree may

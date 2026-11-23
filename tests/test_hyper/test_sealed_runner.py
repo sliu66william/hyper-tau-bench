@@ -481,7 +481,7 @@ def test_runtime_image_removes_canonical_domains_and_task_data():
     # must run it and drop the task data.
     assert "strip_runtime_src.py" in dockerfile
     assert "rm -rf data/tau2/domains" in dockerfile
-    assert "COPY data/tau2/user_simulator" in dockerfile
+    assert "COPY data/tau2/user_simulator" not in dockerfile
     assert "COPY data/tau2/hyper" not in dockerfile
 
 

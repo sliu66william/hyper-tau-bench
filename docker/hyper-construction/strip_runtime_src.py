@@ -62,23 +62,42 @@ FORBIDDEN_MARKERS = [
     "client_lever_gate",
     "held_fact",
     "client_instructions",
+    "RESPONSE_OPENINGS_SYSTEM_PROMPT",
+    "evaluator_nl_assertions",
+    "evaluator_response_assertions",
 ]
 
-# Host-only trees outside tau2/hyper that carry evaluation vocabulary or
-# results tooling and are never imported by the in-container runtime.
+# Host-only trees outside tau2/hyper that carry evaluation vocabulary,
+# grader prompts/logic, user-simulator prompts, knowledge retrieval pipelines,
+# or results tooling and are never imported by the in-container runtime.
 REMOVE_OUTSIDE_HYPER = [
+    "api_service",
     "cli.py",
+    "environment/utils",
+    "evaluator",
+    "gym",
+    "knowledge",
+    "metrics",
+    "orchestrator",
+    "registry.py",
+    "run.py",
+    "runner",
     "scripts",
+    "user",
+    "user_simulation_voice_presets.py",
+    "utils/display.py",
 ]
 
-# Project-root files needed only to build the venv (uv sync runs before this
-# script). The repo README and package metadata name the benchmark, its
-# paper, and the private repo — a Developer reading /opt/tau2 must not learn
-# which benchmark it is in.
+# Project-root files and host-only data directories needed only during build
+# or host scoring. The repo README and package metadata name the benchmark,
+# its paper, and the private repo — and data/tau2/user_simulator holds the
+# user-simulator prompt templates that a Developer reading /opt/tau2 must
+# never inspect.
 REMOVE_PROJECT_ROOT = [
     "README.md",
     "pyproject.toml",
     "uv.lock",
+    "data/tau2/user_simulator",
 ]
 
 MINIMAL_PACKAGE_INIT = (
@@ -112,7 +131,9 @@ def main() -> int:
             target.unlink()
     for rel in REMOVE_PROJECT_ROOT:
         target = root / rel
-        if target.exists():
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        elif target.exists():
             target.unlink()
 
     # 2. Fail-closed sweep of tau2/hyper.
