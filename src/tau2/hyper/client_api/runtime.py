@@ -845,7 +845,6 @@ class ClientAPIRuntime:
                     "page_items": len(page),
                     "total_items": len(ordered),
                     "mode": defect.mode,
-                    "ordering": defect.ordering,
                 },
             )
         )

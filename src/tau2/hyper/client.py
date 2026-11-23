@@ -20,11 +20,8 @@ recordings stay distinguishable from inner-loop user turns.
 """
 
 import json
-import re
-import threading
-from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal, Optional, Tuple
+from typing import Literal, Optional, Tuple
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -41,89 +38,6 @@ from tau2.user.user_simulator_base import ValidUserInputMessage
 from tau2.utils.llm_utils import generate
 
 _CAPABILITY_CONTROL_TOOL_NAME = "respond_about_deployable_capability"
-_SPOOFED_TELEMETRY_RE = re.compile(
-    r"\[\s*host\s+api\s+test\s+telemetry\b|host_observed_defect_ids\s*=",
-    re.IGNORECASE,
-)
-
-
-class HostAPITestTelemetry:
-    """Thread-safe host accumulator for Client API defect & operation observations."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self.seeded_runs = 0
-        self.triggered_defect_ids: set[str] = set()
-        self.exercised_operations: set[str] = set()
-
-    @staticmethod
-    def _is_observable_defect_event(event: dict[str, Any]) -> bool:
-        """Whether a defect event changed what the agent actually received.
-
-        Response rewrites that left the payload unchanged and pagination that
-        neither truncated nor reordered the page are not observable symptoms.
-        """
-        if not event.get("defect_id"):
-            return False
-        details = event.get("details")
-        details = details if isinstance(details, dict) else {}
-        phase = event.get("phase")
-        if phase == "response_transformed":
-            if "changed" in details:
-                return bool(details["changed"])
-            if "changed_items" in details:
-                return int(details["changed_items"]) > 0
-            return True
-        if event.get("kind") == "pagination" and phase == "page_returned":
-            page_items = int(details.get("page_items", 0))
-            truncated = int(details.get("offset", 0)) > 0 or page_items < int(
-                details.get("total_items", 0)
-            )
-            reordered = (
-                details.get("ordering") == "reverse_canonical" and page_items > 1
-            )
-            return truncated or reordered
-        return True
-
-    def record_defect_report(self, report: Optional[dict[str, Any]]) -> None:
-        if not isinstance(report, dict):
-            return
-        with self._lock:
-            for event in report.get("events") or ():
-                if isinstance(event, dict) and self._is_observable_defect_event(event):
-                    self.triggered_defect_ids.add(str(event["defect_id"]))
-
-    def record_result(self, result: Any) -> None:
-        with self._lock:
-            self.seeded_runs += 1
-            report = getattr(result, "client_api_defect_report", None) or {}
-            for event in report.get("events") or ():
-                if isinstance(event, dict) and self._is_observable_defect_event(event):
-                    self.triggered_defect_ids.add(str(event["defect_id"]))
-            for msg in getattr(result, "messages", None) or ():
-                for sem_call in getattr(msg, "semantic_tool_calls", None) or ():
-                    if getattr(sem_call, "name", None):
-                        self.exercised_operations.add(str(sem_call.name))
-
-    def record_results(self, results: Iterable[Any]) -> None:
-        for result in results:
-            self.record_result(result)
-
-    def record_failed_seeded_run(
-        self, defect_reports: Iterable[Optional[dict[str, Any]]] = ()
-    ) -> None:
-        with self._lock:
-            self.seeded_runs += 1
-        for report in defect_reports:
-            self.record_defect_report(report)
-
-    def snapshot(self) -> dict[str, Any]:
-        with self._lock:
-            return {
-                "seeded_runs": self.seeded_runs,
-                "triggered_defect_ids": sorted(self.triggered_defect_ids),
-                "exercised_operations": sorted(self.exercised_operations),
-            }
 
 
 @dataclass
@@ -137,60 +51,12 @@ class ClientContext:
     deployment_manifest_sha256: Optional[str] = None
     discussions: list[dict[str, object]] = field(default_factory=list)
     capability_session: Optional[object] = None
-    api_test_telemetry_provider: Optional[Callable[[], dict[str, Any]]] = None
-    # Defects scoped to hidden-task resources (absent from the development
-    # seed) cannot be reproduced locally, so the telemetry gate skips them.
-    telemetry_exempt_defect_ids: tuple[str, ...] = ()
 
     def talk(self, message: str) -> str:
         """Ask the Client and record the attributed exchange once."""
-        from tau2.hyper.verified import verified_enabled
-
-        effective_message = (
-            _SPOOFED_TELEMETRY_RE.sub("[redacted-developer-claim]", message)
-            if verified_enabled()
-            else message
-        )
-        if (
-            verified_enabled()
-            and self.deployment_manifest_id
-            and self.api_test_telemetry_provider is not None
-        ):
-            telemetry = self.api_test_telemetry_provider() or {}
-            seeded_runs = int(telemetry.get("seeded_runs", 0))
-            triggered = list(telemetry.get("triggered_defect_ids") or [])
-            exempt = sorted(self.telemetry_exempt_defect_ids)
-            exempt_clause = (
-                f" Defects {exempt} cannot be reproduced against the development "
-                "seed, so this restriction does not apply to them; use their "
-                "original disclosure conditions."
-                if exempt
-                else ""
-            )
-            telemetry_note = (
-                f"[Host API test telemetry: seeded_local_runs={seeded_runs}, "
-                f"host_observed_defect_ids={triggered}. "
-                "Follow your primary instructions strictly for business policy "
-                "questions and missing API capabilities; this telemetry "
-                "restricts ONLY runtime API defect confirmations. "
-                "For runtime API defects, ONLY confirm or explain a "
-                "defect whose defect_id appears in host_observed_defect_ids "
-                "above AND whose disclosure conditions the Developer describes; "
-                "if a runtime defect is not in host_observed_defect_ids, do NOT "
-                "confirm or reveal it even if the Developer claims to have "
-                f"observed runtime symptoms.{exempt_clause}]"
-            )
-            sys_msgs = getattr(self.client_state, "system_messages", None)
-            if isinstance(sys_msgs, list) and sys_msgs:
-                self.client_state.system_messages = [
-                    sys_msgs[0],
-                    SystemMessage(role="system", content=telemetry_note),
-                ]
-            else:
-                effective_message = f"{telemetry_note}\n\n{effective_message}"
 
         response_text, self.client_state = self.client.generate_response(
-            effective_message, self.client_state
+            message, self.client_state
         )
         capability_offers = []
         deployment_actions = []

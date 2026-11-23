@@ -35,7 +35,6 @@ class LocalTestWiring:
     capability_snapshot_provider: Optional[Callable[[], Any]] = None
     allowed_agent_models: Optional[list[dict[str, Any]]] = None
     performance_requirements: Optional[list[Any]] = None
-    api_test_telemetry: Optional[Any] = None
 
 
 class SandboxToolError(Exception):
@@ -189,14 +188,6 @@ class LocalTestService:
         self.docker_cpus = docker_cpus
         self.response_phrasing_pack = response_phrasing_pack
         self.local_test_wiring = local_test_wiring
-        from tau2.hyper.client import HostAPITestTelemetry
-
-        self._telemetry = (
-            local_test_wiring.api_test_telemetry
-            if local_test_wiring is not None
-            and local_test_wiring.api_test_telemetry is not None
-            else HostAPITestTelemetry()
-        )
         self._canonical_manifest: Optional[dict[str, Any]] = None
         manifest_path = self.sandbox_root / "framework" / "deployment_manifest.json"
         if (
@@ -232,10 +223,6 @@ class LocalTestService:
                     for req in local_test_wiring.performance_requirements
                 ]
             self._canonical_manifest = base
-
-    def get_client_api_test_telemetry(self) -> dict[str, Any]:
-        """Return host-verified Client API telemetry from seeded local runs."""
-        return self._telemetry.snapshot()
 
     def _resolve_path(self, path: str) -> Path:
         """Resolve a path relative to the sandbox root, blocking escapes and symlinks."""
@@ -470,27 +457,6 @@ class LocalTestService:
             stock_model_config.get("constraints", {})
         )
         user_llm_args = dict(wiring.user_llm_args)
-        active_runtimes: list[Any] = []
-
-        def _tracked_client_api_factory(*, solo_mode: bool = False):
-            rt = create_domain_client_api_runtime(
-                domain,
-                solo_mode=solo_mode,
-                development_seed=True,
-                **(
-                    {"deployment_snapshot": wiring.capability_snapshot_provider()}
-                    if wiring.capability_snapshot_provider is not None
-                    else {}
-                ),
-                **(
-                    {"defect_profile": wiring.client_api_defect_profile}
-                    if wiring.client_api_defect_profile is not None
-                    else {}
-                ),
-            )
-            active_runtimes.append(rt)
-            return rt
-
         sealed_config = SealedRunnerConfig(
             kit_path=self.sandbox_root,
             image=self.docker_image,
@@ -499,7 +465,25 @@ class LocalTestService:
             domain=domain,
             client_api_mode=wiring.client_api_mode,
             client_api_factory=(
-                _tracked_client_api_factory
+                (
+                    lambda *, solo_mode=False: create_domain_client_api_runtime(
+                        domain,
+                        solo_mode=solo_mode,
+                        development_seed=True,
+                        **(
+                            {
+                                "deployment_snapshot": wiring.capability_snapshot_provider()
+                            }
+                            if wiring.capability_snapshot_provider is not None
+                            else {}
+                        ),
+                        **(
+                            {"defect_profile": wiring.client_api_defect_profile}
+                            if wiring.client_api_defect_profile is not None
+                            else {}
+                        ),
+                    )
+                )
                 if wiring.client_api_mode == "rest"
                 else None
             ),
@@ -601,9 +585,6 @@ class LocalTestService:
                     client_api_developer_test_scenario_id=developer_test_scenario_id,
                 )
                 projected_messages = _inner.project_messages(result.messages)
-                if scenario_client_api_mode != "mock":
-                    self._telemetry.record_result(result)
-                active_runtimes.clear()
                 developer_visible_result = result.model_dump(mode="json")
                 developer_visible_result.pop("client_api_defect_report", None)
                 # The sandbox-local run artifact is Developer-readable, so
@@ -653,14 +634,6 @@ class LocalTestService:
                     )
                 output_blocks.append(formatted_result)
             except Exception as e:
-                if scenario_client_api_mode != "mock" and active_runtimes:
-                    reports = [
-                        rt.defect_report()
-                        for rt in active_runtimes
-                        if callable(getattr(rt, "defect_report", None))
-                    ]
-                    self._telemetry.record_failed_seeded_run(reports)
-                active_runtimes.clear()
                 error_count += 1
                 credit_usages.append(None)
                 error_record = {
